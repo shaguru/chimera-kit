@@ -110,7 +110,7 @@ Each suite runs in background Blender:
 blender --background --factory-startup --python-exit-code 1 --python tests/smoke_blender.py
 ```
 
-The suites are `smoke`, `creatures`, `cycles`, `parts`, `live`, `livebody`, `features`, `workflows`, `layer_evaluation`, `package` and `retarget`. The pictures above are rendered by `scripts/render_showcase.py`, and `scripts/build_release.py` rebuilds the installable zip.
+The suites are `smoke`, `creatures`, `cycles`, `parts`, `live`, `livebody`, `features`, `workflows`, `layer_evaluation`, `package` and `retarget`. The `package` suite opens a demo scene, so run `scripts/create_demo.py` once before it. The pictures above are rendered by `scripts/render_showcase.py`, and `scripts/build_release.py` rebuilds the installable zip.
 
 ## Credits and names
 
