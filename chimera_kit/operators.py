@@ -39,7 +39,7 @@ def pose_items(self, context):
     return _POSE_ITEMS
 
 class CS_OT_build(Operator):
-    bl_idname="character_studio.build"
+    bl_idname="chimera_kit.build"
     bl_label="Build new creature"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -55,7 +55,7 @@ class CS_OT_build(Operator):
         return {"FINISHED"}
 
 class CS_OT_sync_settings(Operator):
-    bl_idname="character_studio.sync_settings"
+    bl_idname="chimera_kit.sync_settings"
     bl_label="Load this creature's body values"
     bl_description="Set the body sliders to the active creature, so changing them reshapes it"
     bl_options={"REGISTER","UNDO"}
@@ -67,7 +67,7 @@ class CS_OT_sync_settings(Operator):
         return {"FINISHED"}
 
 class CS_OT_add_module(Operator):
-    bl_idname="character_studio.add_module"
+    bl_idname="chimera_kit.add_module"
     bl_label="Append structure to rig"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -83,13 +83,13 @@ class CS_OT_add_module(Operator):
         return {"FINISHED"}
 
 class CS_OT_delete(Operator):
-    bl_idname="character_studio.delete"
+    bl_idname="chimera_kit.delete"
     bl_label="Delete owned rig"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
         arm=active(context)
         if not arm:
-            self.report({"WARNING"},"Select a Character Studio rig")
+            self.report({"WARNING"},"Select a Chimera Kit rig")
             return {"CANCELLED"}
         collection=arm.users_collection[0] if arm.users_collection else None
         if collection:
@@ -111,7 +111,7 @@ class CS_OT_delete(Operator):
         return {"FINISHED"}
 
 class CS_OT_validate(Operator):
-    bl_idname="character_studio.validate"
+    bl_idname="chimera_kit.validate"
     bl_label="Validate rig"
     def execute(self,context):
         issues=rig.validate(active(context))
@@ -120,7 +120,7 @@ class CS_OT_validate(Operator):
         return {"FINISHED"}
 
 class CS_OT_fit_start(Operator):
-    bl_idname="character_studio.fit_start"
+    bl_idname="chimera_kit.fit_start"
     bl_label="Start fit mode"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -133,7 +133,7 @@ class CS_OT_fit_start(Operator):
         return {"FINISHED"}
 
 class CS_OT_fit_finish(Operator):
-    bl_idname="character_studio.fit_finish"
+    bl_idname="chimera_kit.fit_finish"
     bl_label="Finish fit mode"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -149,7 +149,7 @@ class CS_OT_fit_finish(Operator):
         return {"FINISHED"}
 
 class CS_OT_generate_motion(Operator):
-    bl_idname="character_studio.generate_motion"
+    bl_idname="chimera_kit.generate_motion"
     bl_label="Generate gait"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -168,7 +168,7 @@ class CS_OT_generate_motion(Operator):
         return {"FINISHED"}
 
 class CS_OT_push_clip(Operator):
-    bl_idname="character_studio.push_clip"
+    bl_idname="chimera_kit.push_clip"
     bl_label="Push action to NLA"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -181,7 +181,7 @@ class CS_OT_push_clip(Operator):
         return {"FINISHED"}
 
 class CS_OT_motion_style(Operator):
-    bl_idname="character_studio.motion_style"
+    bl_idname="chimera_kit.motion_style"
     bl_label="Apply motion style"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -209,7 +209,7 @@ class CS_OT_motion_style(Operator):
         return {"FINISHED"}
 
 class CS_OT_load_motion(Operator):
-    bl_idname="character_studio.load_motion"
+    bl_idname="chimera_kit.load_motion"
     bl_label="Read controls from action"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -226,7 +226,7 @@ class CS_OT_load_motion(Operator):
         return {"FINISHED"}
 
 class CS_OT_limb_controls(Operator):
-    bl_idname="character_studio.limb_controls"
+    bl_idname="chimera_kit.limb_controls"
     bl_label="Limb controls"
     bl_options={"REGISTER","UNDO"}
     operation: EnumProperty(items=[("INIT","Enable limb controls","Upgrade older rigs"),
@@ -246,7 +246,7 @@ class CS_OT_limb_controls(Operator):
         return {"FINISHED"}
 
 class CS_OT_footprints(Operator):
-    bl_idname="character_studio.footprints"
+    bl_idname="chimera_kit.footprints"
     bl_label="Footprint objects"
     bl_options={"REGISTER","UNDO"}
     operation: EnumProperty(items=[("CREATE","Create / recreate","Replace footprints from current gait and path"),
@@ -293,14 +293,14 @@ class CS_OT_footprints(Operator):
         return {"FINISHED"}
 
 class CS_OT_layer(Operator):
-    bl_idname="character_studio.layer"
+    bl_idname="chimera_kit.layer"
     bl_label="Animation layer"
     bl_options={"REGISTER","UNDO"}
     operation: EnumProperty(items=[("REMOVE","Remove layer","Remove this NLA layer"),
         ("EDIT","Edit action","Make this layer's action active, preserving the layer"),
         ("PLAY","Play layers","Detach the active action and evaluate the enabled layers"),
         ("UNMUTE","Enable all","Enable all layers for playback"),
-        ("ADOPT","Enable layer controls","Use Character Studio weight and fade controls for this strip"),
+        ("ADOPT","Enable layer controls","Use Chimera Kit weight and fade controls for this strip"),
         ("REFRESH","Update range","Recompute the weight fades for this strip's current time range")])
     index: IntProperty(default=0)
     def execute(self,context):
@@ -354,7 +354,7 @@ class CS_OT_layer(Operator):
         return {"FINISHED"}
 
 class CS_OT_capture_pose(Operator):
-    bl_idname="character_studio.capture_pose"
+    bl_idname="chimera_kit.capture_pose"
     bl_label="Capture pose"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -369,7 +369,7 @@ class CS_OT_capture_pose(Operator):
         return {"FINISHED"}
 
 class CS_OT_apply_pose(Operator):
-    bl_idname="character_studio.apply_pose"
+    bl_idname="chimera_kit.apply_pose"
     bl_label="Apply pose"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -391,7 +391,7 @@ class CS_OT_apply_pose(Operator):
         return {"FINISHED"}
 
 class CS_OT_clear_animation(Operator):
-    bl_idname="character_studio.clear_animation"
+    bl_idname="chimera_kit.clear_animation"
     bl_label="Clear animation"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -406,7 +406,7 @@ class CS_OT_clear_animation(Operator):
         return {"FINISHED"}
 
 class CS_OT_export(Operator):
-    bl_idname="character_studio.export"
+    bl_idname="chimera_kit.export"
     bl_label="Export creature"
     bl_options={"REGISTER"}
     format: EnumProperty(items=[("GLB","glTF Binary","Portable rigged creature"),("FBX","FBX","Biped/CAT-friendly interchange")],default="GLB")
@@ -417,7 +417,7 @@ class CS_OT_export(Operator):
             return {"CANCELLED"}
         path=bpy.path.abspath(settings(context).io_path)
         if not path or path.endswith("/") or path.endswith("\\"):
-            path=os.path.join(bpy.path.abspath("//"),"character_studio."+self.format.lower())
+            path=os.path.join(bpy.path.abspath("//"),"chimera_kit."+self.format.lower())
         expected="."+self.format.lower()
         if os.path.splitext(path)[1].lower()!=expected:
             path=os.path.splitext(path)[0]+expected
@@ -485,7 +485,7 @@ class CS_OT_export(Operator):
         return {"FINISHED"}
 
 class CS_OT_report(Operator):
-    bl_idname="character_studio.report"
+    bl_idname="chimera_kit.report"
     bl_label="Write JSON manifest"
     def execute(self,context):
         arm=active(context)
@@ -493,11 +493,11 @@ class CS_OT_report(Operator):
             self.report({"WARNING"},"Build or select a rig first")
             return {"CANCELLED"}
         collection=arm.users_collection[0] if arm.users_collection else None
-        report={"schema":1,"tool":"Character Studio for Blender","rig":arm.name,
+        report={"schema":1,"tool":"Chimera Kit for Blender","rig":arm.name,
             "species":arm.get("cs_species"),"bones":[b.name for b in arm.data.bones],
             "ik_limbs":json.loads(arm.get("cs_limbs","[]")),"objects":[o.name for o in collection.all_objects] if collection else [],
             "actions":[a.name for a in bpy.data.actions if a.get("cs_motion")],"frame_range":[context.scene.frame_start,context.scene.frame_end]}
-        path=bpy.path.abspath("//character_studio_manifest.json")
+        path=bpy.path.abspath("//chimera_kit_manifest.json")
         try:
             with open(path,"w",encoding="utf-8") as handle: json.dump(report,handle,indent=2)
         except OSError as exc:
@@ -507,7 +507,7 @@ class CS_OT_report(Operator):
         return {"FINISHED"}
 
 class CS_OT_pose_tools(Operator):
-    bl_idname="character_studio.pose_tools"
+    bl_idname="chimera_kit.pose_tools"
     bl_label="Pose tools"
     bl_options={"REGISTER","UNDO"}
     operation: EnumProperty(items=[("RESET","Reset pose","Detach active action and reset controls"),
@@ -542,7 +542,7 @@ class CS_OT_pose_tools(Operator):
         return {"FINISHED"}
 
 class CS_OT_bind(Operator):
-    bl_idname="character_studio.bind"
+    bl_idname="chimera_kit.bind"
     bl_label="Bind selected meshes"
     bl_options={"REGISTER","UNDO"}
     method: EnumProperty(items=[("ENVELOPE","Distance weights","Stable closest bone segment weights"),
@@ -588,14 +588,14 @@ class CS_OT_bind(Operator):
                         groups[name].add([vertex.index],weight/total,"REPLACE")
                 mod=next((m for m in obj.modifiers if m.type=="ARMATURE" and m.object==arm),None)
                 if not mod:
-                    mod=obj.modifiers.new("Character Studio Skin","ARMATURE")
+                    mod=obj.modifiers.new("Chimera Kit Skin","ARMATURE")
                     mod.object=arm
                 obj["cs_bound"]=arm["cs_id"]
         settings(context).status=f"Bound {len(meshes)} mesh(es) · refine weights in Weight Paint mode"
         return {"FINISHED"}
 
 class CS_OT_preview(Operator):
-    bl_idname="character_studio.preview"
+    bl_idname="chimera_kit.preview"
     bl_label="Toggle mannequin"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -609,7 +609,7 @@ class CS_OT_preview(Operator):
         return {"FINISHED"}
 
 class CS_OT_preset_file(Operator):
-    bl_idname="character_studio.preset_file"
+    bl_idname="chimera_kit.preset_file"
     bl_label="Creature recipe"
     bl_options={"REGISTER","UNDO"}
     operation: EnumProperty(items=[("SAVE","Save recipe","Write the current rig recipe as JSON"),
@@ -622,8 +622,9 @@ class CS_OT_preset_file(Operator):
         keys=("species","size","body_length","body_width","leg_length","arm_length","head_size","leg_pairs","spine_links","tail_links",
               "fingers","finger_links","mannequin_style","wings","antennae","ponytail","neck_length","neck_links","jaw","antenna_length","antenna_links",
               "tail_length","wing_span","wing_links","eyes","eye_size","chest_size","belly_size","hip_size",
+              "eye_spacing","eye_height","eye_forward","front_legs","hind_legs",
               "wing_style","wing_frequency","wing_fold","jaw_open","jaw_chance","jaw_rate","eye_bounce","body_wave","secondary","foot_roll",
-              "motion_type","jump_height","jump_distance","jump_crouch","strike_side","strike_height","body_lean",
+              "motion_type","jump_height","jump_distance","jump_crouch","strike_side","strike_height","body_lean","fly_height",
               "gait","cycle_frames","cycles","start_frame","stride","lift","stance","foot_planting","exaggeration","body_height",
               "bounce","bounce_frequency","sway","body_roll","body_pitch","body_twist","motion_phase","tail_swing","tail_lift",
               "tail_frequency","tail_stiffness","tail_phase","spine_bend","spine_twist","spine_flex","head_bob","arm_swing","wing_flap",
@@ -631,11 +632,13 @@ class CS_OT_preset_file(Operator):
         try:
             if self.operation=="SAVE":
                 with open(path,"w",encoding="utf-8") as handle:
-                    json.dump({"schema":2,"character_studio":{key:getattr(p,key) for key in keys}},handle,indent=2)
+                    json.dump({"schema":2,"chimera_kit":{key:getattr(p,key) for key in keys}},handle,indent=2)
             else:
                 with open(path,encoding="utf-8") as handle: data=json.load(handle)
+                # Recipes saved under the add-on's earlier name still load.
+                if "chimera_kit" in data: data["character_studio"]=data["chimera_kit"]
                 if data.get("schema") not in {1,2} or not isinstance(data.get("character_studio"),dict):
-                    raise ValueError("This is not a Character Studio recipe")
+                    raise ValueError("This is not a Chimera Kit recipe")
                 values=data["character_studio"]
                 if values.get("species") not in {x[0] for x in __import__(__package__,fromlist=["PRESETS"]).PRESETS}:
                     raise ValueError("Unknown creature species")
@@ -661,7 +664,7 @@ class CS_OT_preset_file(Operator):
         return {"FINISHED"}
 
 class CS_OT_animation_export(Operator):
-    bl_idname="character_studio.animation_export"
+    bl_idname="chimera_kit.animation_export"
     bl_label="Bake deform skeleton"
     bl_options={"REGISTER","UNDO"}
     def execute(self,context):
@@ -705,7 +708,7 @@ def map_rows(p):
     return [dict(slot=i.slot,label=i.label,kind=i.kind,source=i.source,target=i.target,ref=i.ref) for i in p.rt_items]
 
 class CS_OT_retarget_pick(Operator):
-    bl_idname="character_studio.retarget_pick"
+    bl_idname="chimera_kit.retarget_pick"
     bl_label="Use selected armature"
     bl_description="Use the selected armature, or the active creature when nothing else is selected"
     bl_options={"REGISTER","UNDO"}
@@ -721,7 +724,7 @@ class CS_OT_retarget_pick(Operator):
         return {"FINISHED"}
 
 class CS_OT_retarget_automap(Operator):
-    bl_idname="character_studio.retarget_automap"
+    bl_idname="chimera_kit.retarget_automap"
     bl_label="Auto-map bones"
     bl_description="Recognise both armatures and pair their bones by name and position in the body"
     bl_options={"REGISTER","UNDO"}
@@ -737,7 +740,7 @@ class CS_OT_retarget_automap(Operator):
         return {"FINISHED"}
 
 class CS_OT_retarget_run(Operator):
-    bl_idname="character_studio.retarget_run"
+    bl_idname="chimera_kit.retarget_run"
     bl_label="Retarget motion"
     bl_description="Key the target armature so it performs the source armature's motion"
     bl_options={"REGISTER","UNDO"}
@@ -775,7 +778,7 @@ class CS_OT_retarget_run(Operator):
         return {"FINISHED"}
 
 class CS_OT_import_mixamo(Operator):
-    bl_idname="character_studio.import_mixamo"
+    bl_idname="chimera_kit.import_mixamo"
     bl_label="Import Mixamo FBX"
     bl_description="Import a Mixamo (or other) FBX animation and make it the motion source"
     bl_options={"REGISTER","UNDO"}
@@ -810,7 +813,7 @@ class CS_OT_import_mixamo(Operator):
         return {"FINISHED"}
 
 class CS_OT_retarget_map_file(Operator):
-    bl_idname="character_studio.retarget_map_file"
+    bl_idname="chimera_kit.retarget_map_file"
     bl_label="Bone map file"
     bl_options={"REGISTER","UNDO"}
     operation: EnumProperty(items=[("SAVE","Save map","Write the bone map as JSON"),
@@ -823,12 +826,12 @@ class CS_OT_retarget_map_file(Operator):
         try:
             if self.operation=="SAVE":
                 with open(path,"w",encoding="utf-8") as handle:
-                    json.dump({"schema":1,"character_studio_bone_map":map_rows(p)},handle,indent=2)
+                    json.dump({"schema":1,"chimera_kit_bone_map":map_rows(p)},handle,indent=2)
             else:
                 with open(path,encoding="utf-8") as handle: data=json.load(handle)
-                rows=data.get("character_studio_bone_map")
+                rows=data.get("chimera_kit_bone_map") or data.get("character_studio_bone_map")
                 if not isinstance(rows,list):
-                    raise ValueError("This is not a Character Studio bone map")
+                    raise ValueError("This is not a Chimera Kit bone map")
                 p.rt_items.clear()
                 for row in rows:
                     item=p.rt_items.add()

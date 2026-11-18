@@ -1,9 +1,9 @@
-"""Character Studio: procedural creature rigs and locomotion for Blender."""
+"""Chimera Kit: procedural creature rigs and locomotion for Blender."""
 
 bl_info = {
-    "name": "Character Studio", "author": "Character Studio contributors",
-    "version": (1, 2, 0), "blender": (4, 2, 0), "category": "Rigging",
-    "location": "3D View > Sidebar > Character Studio",
+    "name": "Chimera Kit", "author": "Chimera Kit contributors",
+    "version": (1, 3, 0), "blender": (4, 2, 0), "category": "Rigging",
+    "location": "3D View > Sidebar > Chimera Kit",
     "description": "Build creature rigs, pose with IK, generate gaits and bind meshes",
 }
 
@@ -18,6 +18,7 @@ PRESETS = [
     ("APE", "Ape", "Upright primate with arms"),
     ("ALIEN", "Alien", "Slender biped with antennae"),
     ("ANGEL", "Angel", "Winged biped"),
+    ("GORILLA", "Gorilla", "Knuckle-walking primate: long arms in front, short legs behind, deep chest"),
     ("CENTAUR", "Centaur", "Four-legged body with an upright torso and arms"),
     ("MECH", "Mech · Classic", "Mechanical biped with compact spine"),
     ("MECH_TROOPER", "Mech · Trooper", "Armoured humanoid mech: broad shoulders, heavy forearms and flared lower legs"),
@@ -49,7 +50,7 @@ PRESETS = [
     ("CRAB", "Crab", "Radial creature with ten legs"),
     ("CENTIPEDE", "Centipede", "Segmented body with many leg pairs"),
 ]
-GROUPS = [("Humanoids", ("BIPED","HUMAN","APE","ALIEN","ANGEL","CENTAUR")),
+GROUPS = [("Humanoids & primates", ("BIPED","HUMAN","APE","GORILLA","ALIEN","ANGEL","CENTAUR")),
           ("Mechs", ("MECH","MECH_TROOPER","MECH_FLYER","MECH_POD")),
           ("Four legs", ("HORSE","GNOU","GIRAFFE","PANTHER","DRAGON")),
           ("Reptiles, amphibians & dinosaurs", ("LIZARD","GECKO","FROG","SNAKE","ALLOSAUR","TREX","BRONTO")),
@@ -71,7 +72,7 @@ def preset_changed(self, context):
         "MECH_POD": (1, 1, 0, 1.0, 1.0),
         "HUMAN": (1, 2, 0, 1.0, 1.0), "APE": (1, 3, 0, 1.1, 0.7),
         "MECH": (1, 1, 0, 1.1, 1.0), "HORSE": (2, 4, 5, 1.35, 1.0),
-        "GNOU": (2, 4, 1, 1.35, 1.0), "GIRAFFE": (2, 3, 3, 1.05, 1.55), "PANTHER": (2, 4, 9, 1.55, 0.8),
+        "GNOU": (2, 4, 1, 1.35, 1.0), "GORILLA": (2, 3, 0, 0.8, 0.95), "GIRAFFE": (2, 3, 3, 1.05, 1.55), "PANTHER": (2, 4, 9, 1.55, 0.8),
         "LIZARD": (2, 6, 9, 1.5, 1.0), "GECKO": (2, 4, 4, 1.0, 1.0), "ALIEN": (1, 3, 0, 1.0, 1.05),
         "TREX": (1, 4, 10, 1.0, 1.0), "BRONTO": (2, 5, 14, 1.7, 1.0),
         "ALLOSAUR": (1, 4, 10, 1.0, 1.0), "CENTAUR": (2, 4, 5, 1.35, 1.0), "DRAGON": (2, 5, 9, 1.35, 1.0),
@@ -86,22 +87,25 @@ def preset_changed(self, context):
     }[species]
     self.leg_pairs, self.spine_links, self.tail_links, self.body_length, self.leg_length = defaults
     self.body_width = {"APE":1.4,"MECH":1.5,"CRAB":1.7,"GNOU":1.3,"LIZARD":0.9,"GECKO":1.25,"ALIEN":0.8,
-                       "PENGUIN":1.5,"MECH_TROOPER":1.15,"BRONTO":1.6,"FROG":1.5}.get(species,1.0)
+                       "PENGUIN":1.5,"MECH_TROOPER":1.15,"BRONTO":1.6,"FROG":1.5,"GORILLA":1.55}.get(species,1.0)
     self.arm_length = {"APE":1.5,"ALIEN":1.3,"PENGUIN":0.9}.get(species,1.0)
     self.head_size = {"APE":0.75,"ALIEN":1.2,"GECKO":1.15,"BRONTO":0.7}.get(species,1.0)
     self.neck_length = {"GIRAFFE":3.4,"BRONTO":5.0}.get(species,1.0)
     self.neck_links = {"GIRAFFE":5,"OSTRICH":3,"BRONTO":9}.get(species,1)
     # Animals with a mouth worth opening get a hinged jaw; beaks, visors and box heads do not.
     self.jaw = species in {"APE","ALIEN","CENTAUR","HORSE","GNOU","GIRAFFE","PANTHER","DRAGON","LIZARD","GECKO",
-                           "ALLOSAUR","TREX","BRONTO","FISH","SHARK","WHALE","FROG","SNAKE"}
+                           "ALLOSAUR","TREX","BRONTO","FISH","SHARK","WHALE","FROG"}
     self.antenna_length, self.antenna_links = 1.0, 3
     self.tail_length, self.wing_span, self.wing_links = 1.0, 1.0, 2
     self.eyes, self.eye_size = species in {"FROG","TADPOLE"}, {"FROG":1.5,"TADPOLE":1.2}.get(species,1.0)
+    self.eye_spacing, self.eye_height, self.eye_forward = 0.48, 0.0, 0.45
+    # Front and hind leg heights: a gorilla and a giraffe stand taller in front.
+    self.front_legs, self.hind_legs = {"GORILLA":(1.22,0.80),"GIRAFFE":(1.10,0.92)}.get(species,(1.0,1.0))
     # Trunk profile: animals carry a deep chest, a tucked waist and solid hips.
     animals = {"HORSE","GNOU","GIRAFFE","PANTHER","DRAGON","CENTAUR","LIZARD","GECKO","ALLOSAUR","TREX","BRONTO",
                "BIRD","EAGLE","OSTRICH"}
     people = {"HUMAN","APE","ALIEN","ANGEL","BIPED"}
-    self.chest_size, self.belly_size, self.hip_size = ((1.15,0.85,1.08) if species in animals else
+    self.chest_size, self.belly_size, self.hip_size = ((1.5,1.15,0.9) if species=="GORILLA" else (1.15,0.85,1.08) if species in animals else
         (1.08,0.92,1.0) if species in people else (1.0,1.0,1.0))
     self.wings = species in {"DRAGON","ANGEL","BIRD","EAGLE","OSTRICH","MECH_FLYER"}
     self.antennae = species=="ALIEN"
@@ -113,16 +117,16 @@ def preset_changed(self, context):
     tuned = dict(gait="WALK", spine_bend=0.10, tail_swing=0.20, body_height=-0.08, spine_flex=0.05,
                   tail_lift=0.0, spine_twist=0.10, body_twist=0.06, sway=0.025, head_bob=0.04,
                   arm_swing=0.22, wing_flap=0.45, wing_style="FLAP", wing_frequency=1.0, wing_fold=0.0,
-                  body_roll=0.015, body_wave=0.0)
+                  body_roll=0.015, body_wave=0.0, bounce=0.025)
     if species in {"LIZARD","GECKO"}:
         tuned.update(gait="TROT", spine_bend=0.5, tail_swing=0.5, body_height=-0.02)
     elif species=="SNAKE":
         # Each bend travels from head to tail: about one and a half waves along the body.
-        tuned.update(spine_bend=1.3, body_wave=0.75, tail_swing=0.75, tail_stiffness=0.0, body_height=0.0, spine_flex=0.0,
+        tuned.update(bounce=0.0, spine_bend=1.3, body_wave=0.75, tail_swing=0.75, tail_stiffness=0.0, body_height=0.0, spine_flex=0.0,
                      spine_twist=0.0, body_twist=0.0, sway=0.0, head_bob=0.0, body_roll=0.0)
     elif species=="WORM":
         # An inchworm arches its back in a wave instead of bending sideways.
-        tuned.update(spine_bend=0.08, spine_flex=0.55, body_wave=0.6, tail_swing=0.04, tail_lift=0.12, tail_stiffness=0.0,
+        tuned.update(bounce=0.0, spine_bend=0.06, spine_flex=0.9, body_wave=0.0, tail_swing=0.03, tail_lift=0.0, tail_stiffness=0.0,
                      body_height=0.0, spine_twist=0.0, body_twist=0.0, sway=0.0, head_bob=0.0, body_roll=0.0)
     elif species=="FROG":
         tuned.update(gait="BOUND", spine_bend=0.08, body_height=-0.02, spine_flex=0.12)
@@ -135,8 +139,8 @@ def preset_changed(self, context):
     elif species=="PENGUIN":
         tuned.update(sway=0.06, body_roll=0.10, arm_swing=0.08, spine_twist=0.04)
     elif species in {"BIRD","EAGLE","OSTRICH"}:
-        # Birds on the ground carry their wings folded.
-        tuned.update(head_bob=0.12, wing_style="FOLDED")
+        # A gentle beat while walking; Folded is one click away in Motion tuning.
+        tuned.update(head_bob=0.12, wing_flap=0.3)
     elif species.startswith("MECH"):
         tuned.update(wing_style="GLIDE", spine_bend=0.03, spine_flex=0.02, head_bob=0.0, sway=0.035)
     for key, value in tuned.items():
@@ -217,7 +221,9 @@ class CSSettings(bpy.types.PropertyGroup):
         ("IDLE","Idle","Standing and breathing with planted feet","PAUSE",1),
         ("JUMP","Jump","Crouch, push off, fly, land and recover","TRIA_UP",2),
         ("PUNCH","Punch","Wind up and strike with one arm","FORWARD",3),
-        ("KICK","Kick","Wind up and strike with one leg","FRAME_NEXT",4)], default="WALK")
+        ("KICK","Kick","Wind up and strike with one leg","FRAME_NEXT",4),
+        ("FLY","Fly","Airborne with the legs tucked: flap, hover, or glide to soar","SORT_DESC",5)], default="WALK")
+    fly_height: FloatProperty(name="Flight height / leg", default=1.5, min=0.0, max=20, soft_max=6)
     jump_height: FloatProperty(name="Jump height / leg", default=0.6, min=0.0, max=3.0)
     jump_distance: FloatProperty(name="Jump distance / leg", default=1.2, min=0.0, max=6.0,
         description="Used when Travel forward is on")
@@ -283,6 +289,16 @@ class CSSettings(bpy.types.PropertyGroup):
         description="Bones along the leading edge. More joints let the wing ripple like a membrane")
     eyes: BoolProperty(name="Eyeballs", default=False, description="Add two cartoon eyeballs on stalks that wobble as the creature moves")
     eye_size: FloatProperty(name="Eye size", default=1.0, min=0.2, max=10, soft_max=4)
+    eye_spacing: FloatProperty(name="Eye spacing", default=0.48, min=0, max=4, soft_max=2,
+        description="0 is together, 1 is at the edges of the head, more is out past it")
+    eye_height: FloatProperty(name="Eye height", default=0.0, min=-1, max=10, soft_max=4,
+        description="0 sits on top of the head. Higher raises the stalks; below 0 slides the eyes down the sides of the head")
+    eye_forward: FloatProperty(name="Eye forward", default=0.45, min=-1, max=1.5,
+        description="0 is the middle of the head, 1 is its front edge")
+    front_legs: FloatProperty(name="Front legs", default=1.0, min=0.2, max=5, soft_max=2.5,
+        description="Height of the front legs and shoulders relative to the preset")
+    hind_legs: FloatProperty(name="Hind legs", default=1.0, min=0.2, max=5, soft_max=2.5,
+        description="Height of the hind legs and hips relative to the preset")
     chest_size: FloatProperty(name="Chest", default=1.0, min=0.2, max=5, soft_max=2.5,
         description="Thickness of the trunk at the chest")
     belly_size: FloatProperty(name="Belly", default=1.0, min=0.2, max=5, soft_max=2.5,

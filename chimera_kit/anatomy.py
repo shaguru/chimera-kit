@@ -295,7 +295,8 @@ def swimmer(p):
     b=Blueprint(p.species,h)
     w=h*style["w"]*p.body_width
     d=h*style["d"]
-    z=d*.52 if style.get("ground") else h*.6
+    # A crawler rests its belly on the floor: its centre sits half the deepest box above it.
+    z=d*.58 if style.get("ground") else h*.6
     even=style.get("even",False)
     b.bone("CTRL-root",(0,0,0),(0,0,h*.12),deform=False,group="Controls")
     b.bone("CTRL-body",(0,0,z),(0,0,z+h*.12),"CTRL-root",False,group="Controls")
@@ -504,9 +505,21 @@ def accessories(b,p):
     if p.eyes and head:
         # Cartoon eyes: a ball on a short stalk above the head, free to bounce.
         size=h*.04*p.eye_size
+        # Spacing 0 puts the eyes together, 1 at the edges of the head, more
+        # pushes them out past it. Height 0 sits them on top; negative values
+        # slide them down the sides of the head, positive values raise the stalks.
+        out=max(width*.5*p.eye_spacing,size*1.02)
+        along=low[1]+depth*(.5-.5*p.eye_forward)
+        if p.eye_height>=0:
+            lift=size*(.9+2.2*p.eye_height)
+            anchor_z=high[2]
+        else:
+            lift=size*.2
+            anchor_z=high[2]+tall*max(-1.0,p.eye_height)
+            out=max(out,width*.5+size*.5)
         for side,sign in (("L",1),("R",-1)):
-            base=(sign*max(width*.24,size*1.05),low[1]+depth*.28,high[2]-size*.2)
-            top=(base[0],base[1]-size*.3,base[2]+size*1.1)
+            base=(sign*min(out,width*.5) if p.eye_height>=0 else sign*width*.5,along,anchor_z-size*.2 if p.eye_height>=0 else anchor_z)
+            top=(sign*out,along-size*.3,anchor_z+lift)
             b.bone(f"eye.01.{side}",base,top,"head",group="Details")
             b.form(f"eye.01.{side}",top,(size,size,size),0,ball="eye_white")
             b.form(f"eye.01.{side}",(top[0],top[1]-size*.72,top[2]),(size*.5,size*.42,size*.5),0,ball="eye_pupil")
@@ -524,8 +537,47 @@ def blueprint(p):
         b=swimmer(p)
     else:
         b=creature(p)
+        if len(b.limbs)>=4 and p.species not in {"SPIDER","CRAB","CENTIPEDE"} and (abs(p.front_legs-1)>1e-6 or abs(p.hind_legs-1)>1e-6):
+            stance(b,p)
     accessories(b,p)
     return b
+
+def stance(b,p):
+    """Different heights for the front and hind legs. Every height is scaled by
+    a factor that runs from the hind-leg value at the hips to the front-leg
+    value at the shoulders, so the back slopes and the feet stay on the floor."""
+    bones={spec["name"]:spec for spec in b.bones}
+    first=min(l["index"] for l in b.limbs)
+    last=max(l["index"] for l in b.limbs)
+    front_y=min(bones[l["upper"]]["head"][1] for l in b.limbs if l["index"]==first)
+    rear_y=max(bones[l["upper"]]["head"][1] for l in b.limbs if l["index"]==last)
+    def factor(y):
+        t=(y-front_y)/max(rear_y-front_y,1e-6)
+        t=max(0.0,min(1.0,t))
+        return p.front_legs+(p.hind_legs-p.front_legs)*t
+    def move(point):
+        return (point[0],point[1],point[2]*factor(point[1]))
+    # A leg keeps one factor from hip to toe, or its knee would bend out of line.
+    leg_factor={}
+    for limb in b.limbs:
+        f=factor(bones[limb["upper"]]["head"][1])
+        for key in ("upper","lower","foot","control","pole"):
+            leg_factor[limb[key]]=f
+        toe=f"toe.{limb['index']+1:02d}.{'L' if limb['side']>0 else 'R'}"
+        leg_factor[toe]=f
+        limb["ankle"]=(limb["ankle"][0],limb["ankle"][1],limb["ankle"][2]*f)
+        limb["knee"]=(limb["knee"][0],limb["knee"][1],limb["knee"][2]*f)
+    for spec in b.bones:
+        f=leg_factor.get(spec["name"])
+        for key in ("head","tail"):
+            spec[key]=(spec[key][0],spec[key][1],spec[key][2]*f) if f else move(spec[key])
+    for form in b.forms:
+        f=leg_factor.get(form["bone"])
+        c=form["center"]
+        form["center"]=(c[0],c[1],c[2]*f) if f else move(c)
+    for limb in b.limbs:
+        hip,ankle=bones[limb["upper"]]["head"],limb["ankle"]
+        limb["reach"]=sum((hip[j]-ankle[j])**2 for j in range(3))**.5
 
 def creature(p):
     species, h = p.species, p.size
@@ -604,6 +656,11 @@ def creature(p):
             neck_top=(0,-length*.54,z+h*.015)
             head_center=(0,-length*.68,z+h*.015)
             head_shape=(h*.065,h*.14,h*.047)
+        elif species == "GORILLA":
+            # A heavy head carried low and forward, with a crest on top.
+            neck_top=(0,-length*.50,z+h*.04)
+            head_center=(0,-length*.50-h*.07,z+h*.07)
+            head_shape=(h*.085,h*.095,h*.10)
         elif species == "FROG":
             neck_top=(0,-length*.46,z+h*.03)
             head_center=(0,-length*.46-h*.085,z+h*.04)
@@ -715,7 +772,14 @@ def creature(p):
                 front=i==0
                 x=sign*width*1.05
                 hip=(sign*width,y,z)
-                if front:
+                if species=="GORILLA":
+                    # Knuckle-walker: long straight arms in front, short flat-footed legs behind.
+                    x=sign*width*(1.25 if front else .95)
+                    hip=(sign*width*(1.15 if front else .8),y,z)
+                    knee=(x,y+(h*.045 if front else -h*.07),z*.52)
+                    ankle=(x,y,h*.055)
+                    toe=(x,y-h*(.05 if front else .09),h*.02)
+                elif front:
                     knee=(x,y+h*.06,z*.66)
                     ankle=(x,y-h*.012,z*.30)
                     ground=(x,y-h*.022,h*.03)

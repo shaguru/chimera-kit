@@ -5,8 +5,8 @@ import sys
 import bpy
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig, motion
+import chimera_kit as cs
+from chimera_kit import rig, motion
 cs.register()
 scene=bpy.context.scene
 p=scene.cs_settings
@@ -76,5 +76,5 @@ for frame in range(1,p.cycle_frames+1):
     scene.frame_set(frame)
     dips.append(control.head.z-control.tail.z)
 check(max(dips)-min(dips)>.03,"foot does not roll during the swing")
-print("CHARACTER_STUDIO_CREATURES_PASSED")
+print("CHIMERA_KIT_CREATURES_PASSED")
 cs.unregister()

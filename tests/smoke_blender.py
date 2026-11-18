@@ -8,8 +8,8 @@ from mathutils import Vector
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig, motion
+import chimera_kit as cs
+from chimera_kit import rig, motion
 
 cs.register()
 p=bpy.context.scene.cs_settings
@@ -83,7 +83,7 @@ motion.generate(bpy.context,arm,p)
 
 # Export selection must exclude unrelated scene objects and other creatures.
 p.io_path=str(output/"custom_spider.glb")
-check(bpy.ops.character_studio.export(format="GLB")=={"FINISHED"},"GLB export failed")
+check(bpy.ops.chimera_kit.export(format="GLB")=={"FINISHED"},"GLB export failed")
 check((output/"custom_spider.glb").stat().st_size>1000,"GLB empty")
 import struct
 payload=(output/"custom_spider.glb").read_bytes()
@@ -93,9 +93,9 @@ check(len(gltf.get("skins",[]))==1,"exported another creature skin")
 check(gltf.get("animations"),"GLB contains no animation")
 check(not any(n.get("name")=="Cube" for n in gltf.get("nodes",[])),"unrelated cube exported")
 p.io_path=str(output/"custom_spider.fbx")
-check(bpy.ops.character_studio.export(format="FBX")=={"FINISHED"},"FBX export failed")
+check(bpy.ops.chimera_kit.export(format="FBX")=={"FINISHED"},"FBX export failed")
 check((output/"custom_spider.fbx").stat().st_size>1000,"FBX empty")
 with open(output/"smoke_results.json","w",encoding="utf-8") as handle:
     json.dump(results,handle,indent=2)
-print("CHARACTER_STUDIO_TESTS_PASSED",json.dumps(results))
+print("CHIMERA_KIT_TESTS_PASSED",json.dumps(results))
 cs.unregister()

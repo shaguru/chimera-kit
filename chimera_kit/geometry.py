@@ -30,6 +30,7 @@ PALETTES = {
     "GIRAFFE": ((.80,.58,.22),(.45,.27,.10)),
     "GECKO": ((.42,.55,.16),(.90,.72,.30)),
     "TREX": ((.30,.24,.16),(.75,.50,.25)),
+    "GORILLA": ((.07,.07,.08),(.30,.30,.33)),
     "CENTAUR": ((.33, .20, .11), (.86, .66, .45)),
     "BIPED": ((.80,.56,.10),(.13,.42,.80)),
     "HUMAN": ((0.13, .38, .56), (.95, .44, .12)),
@@ -54,13 +55,15 @@ def material(name, color, metallic=0.15, roughness=0.36):
     shader.inputs["Roughness"].default_value = roughness
     return mat
 
-SIDE_COLORS={"L":(.05,.22,.85),"R":(.06,.55,.16),"C":(.80,.56,.10),"H":(.13,.42,.80)}
+# Left red, right green (as on a ship's port and starboard lights), blue body, yellow head.
+# The red leans orange and the green leans teal so the pair stays distinguishable to most colour-blind viewers.
+SIDE_COLORS={"L":(.82,.10,.04),"R":(.02,.50,.30),"C":(.07,.22,.72),"H":(.92,.68,.05)}
 
 def side_material(name):
-    """Left blue, right green, centre amber: the classic box-figure coding."""
+    """Left red, right green, blue body, yellow head."""
     key="L" if name.endswith(".L") or ".L." in name else "R" if name.endswith(".R") or ".R." in name else \
         "H" if name=="head" or name.startswith("neck") else "C"
-    return material("CS · box "+key,SIDE_COLORS[key],.0,.55)
+    return material("CK · box "+key,SIDE_COLORS[key],.0,.55)
 
 def mesh_object(collection, name, vertices, faces, mat=None, smooth=True):
     mesh = bpy.data.meshes.new(name)
@@ -170,7 +173,7 @@ def rigid_bind(obj, arm, bone):
     group = obj.vertex_groups.new(name=bone)
     group.add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
     obj.parent = arm
-    modifier = obj.modifiers.new("Character Studio", "ARMATURE")
+    modifier = obj.modifiers.new("Chimera Kit", "ARMATURE")
     modifier.object = arm
     obj["cs_preview"] = True
 

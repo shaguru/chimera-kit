@@ -4,8 +4,8 @@ import sys
 import bpy
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig,motion
+import chimera_kit as cs
+from chimera_kit import rig,motion
 cs.register()
 p=bpy.context.scene.cs_settings
 p.species="HORSE"
@@ -32,4 +32,4 @@ assert abs(arm.pose.bones["tail.01"].rotation_euler[2]-expected*2)<1e-4,"NLA wei
 entry.fade_in=8
 bpy.context.scene.frame_set(5)
 assert abs(detail.influence-.2)<1e-5,"Fade-in envelope did not affect evaluated weight"
-print("CHARACTER_STUDIO_LAYER_EVALUATION_PASSED")
+print("CHIMERA_KIT_LAYER_EVALUATION_PASSED")

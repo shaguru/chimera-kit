@@ -8,8 +8,8 @@ import sys
 import bpy
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig, motion
+import chimera_kit as cs
+from chimera_kit import rig, motion
 cs.register()
 scene=bpy.context.scene
 p=scene.cs_settings
@@ -83,7 +83,7 @@ arm=settle()
 p.species="HORSE"
 same=settle()
 check(same==arm and same["cs_species"]=="BIPED","changing the preset reshaped the active creature")
-check(bpy.ops.character_studio.sync_settings()=={"FINISHED"} and p.species=="BIPED" and p.neck_links==6,"sync back failed")
+check(bpy.ops.chimera_kit.sync_settings()=={"FINISHED"} and p.species=="BIPED" and p.neck_links==6,"sync back failed")
 # Selecting another creature loads its values instead of rebuilding it.
 p.species="GIRAFFE"
 giraffe=rig.build(bpy.context,p)
@@ -112,5 +112,5 @@ for species in ("HUMAN","HORSE","TREX","OSTRICH","MECH_TROOPER","CENTAUR","LIZAR
     check(not rig.validate(creature),species+": long neck build invalid")
     check(sum(1 for b in creature.data.bones if b.name.startswith("neck"))>=5,species+": neck links")
     motion.generate(bpy.context,creature,p)
-print("CHARACTER_STUDIO_LIVEBODY_PASSED")
+print("CHIMERA_KIT_LIVEBODY_PASSED")
 cs.unregister()

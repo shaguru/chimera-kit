@@ -7,8 +7,8 @@ import sys
 import bpy
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig, motion
+import chimera_kit as cs
+from chimera_kit import rig, motion
 cs.register()
 scene=bpy.context.scene
 p=scene.cs_settings
@@ -53,7 +53,7 @@ check((a-b).length>.01,"per-limb phase did not update live")
 # Travel and footprints: moving a marker reshapes the walk.
 p.travel=True
 motion.live_tick()
-check(bpy.ops.character_studio.footprints(operation="CREATE")=={"FINISHED"},"footprints")
+check(bpy.ops.chimera_kit.footprints(operation="CREATE")=={"FINISHED"},"footprints")
 motion.live_tick()
 marker=next(o for o in motion.footprint_objects(arm) if o["cs_limb"]=="CTRL-leg.01.L" and o["cs_cycle"]==1)
 frame=int(marker["cs_contact_frame"])+2
@@ -106,4 +106,4 @@ errors=dict(motion._live)
 cs.unregister()
 check(not bpy.app.timers.is_registered(motion.live_tick),"live timer left registered")
 check("error" not in errors,"live tick raised: "+str(errors.get("error")))
-print("CHARACTER_STUDIO_LIVE_PASSED")
+print("CHIMERA_KIT_LIVE_PASSED")

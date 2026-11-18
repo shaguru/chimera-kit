@@ -1,4 +1,4 @@
-"""Retarget motion between armatures: Character Studio rigs, Mixamo skeletons,
+"""Retarget motion between armatures: Chimera Kit rigs, Mixamo skeletons,
 CloudRig / Rigify-style control rigs and plain FK skeletons.
 
 The source is sampled in world space on every frame. Each mapped target bone
@@ -134,7 +134,7 @@ def score(layout):
     return total+sum(len(layout[slot]) for slot in LIMB_SLOTS)
 
 def cs_layout(arm):
-    """Explicit layout of a Character Studio rig: (skeleton, controls)."""
+    """Explicit layout of a Chimera Kit rig: (skeleton, controls)."""
     names=set(arm.data.bones.keys())
     skeleton=empty_layout()
     skeleton["hips"]="pelvis" if "pelvis" in names else ""
@@ -171,7 +171,7 @@ def describe(arm):
     geometry. The control layout names what an animator keys."""
     if arm.get("cs_rig"):
         skeleton,controls=cs_layout(arm)
-        return "Character Studio rig",skeleton,controls
+        return "Chimera Kit rig",skeleton,controls
     layers={layer:match_layer(arm,layer) for layer in ("","ORG","DEF","FK")}
     fk=layers["FK"]
     if score(fk)>=6:
@@ -317,8 +317,8 @@ def write_curve(action,obj,path,index,group,frames,values):
         point.interpolation="LINEAR"
     curve.update()
 
-HELPER_NAME="CS · Retarget helper"
-CONSTRAINT_NAME="CS · Retarget"
+HELPER_NAME="CK · Retarget helper"
+CONSTRAINT_NAME="CK · Retarget"
 
 def retarget(context,source,target,rows,frame_start,frame_end,align_rest=True,in_place=False,
              leg_mode="BOTH",height_offset=0.0,action_name=""):

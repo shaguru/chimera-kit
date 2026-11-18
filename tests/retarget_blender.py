@@ -11,8 +11,8 @@ from mathutils import Vector, Matrix
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig, motion, retarget
+import chimera_kit as cs
+from chimera_kit import rig, motion, retarget
 
 cs.register()
 scene=bpy.context.scene
@@ -218,12 +218,12 @@ check(not rig.validate(biped),"biped validation")
 check(len(biped.data.bones)==58,f"biped bone count {len(biped.data.bones)}")
 for name in ("clavicle.L","toe.R","index.03.L","thumb.01.R"):
     check(name in biped.data.bones,"biped is missing "+name)
-check(bpy.ops.character_studio.import_mixamo(filepath=path)=={"FINISHED"},"FBX import")
+check(bpy.ops.chimera_kit.import_mixamo(filepath=path)=={"FINISHED"},"FBX import")
 imported=p.rt_source
 check(imported and imported!=source and imported.get("cs_motion_source"),"imported armature not selected as source")
 check(p.rt_target==biped,"active creature not chosen as target")
 check(sum(1 for i in p.rt_items if i.source and i.target)>=17,"too few bones mapped to biped")
-check(bpy.ops.character_studio.retarget_run()=={"FINISHED"},"retarget to biped")
+check(bpy.ops.chimera_kit.retarget_run()=={"FINISHED"},"retarget to biped")
 action=biped.animation_data.action
 check(action and action.get("cs_retarget"),"no retarget action on biped")
 frames=range(p.rt_frame_start,p.rt_frame_end+1,3)
@@ -252,7 +252,7 @@ results["size_ratio"]=ratio
 
 # 3 · In place -----------------------------------------------------------------
 p.rt_in_place=True
-check(bpy.ops.character_studio.retarget_run()=={"FINISHED"},"in-place retarget")
+check(bpy.ops.chimera_kit.retarget_run()=={"FINISHED"},"in-place retarget")
 scene.frame_set(p.rt_frame_start); a=hip_middle(biped,"leg.01.L.upper","leg.01.R.upper")
 scene.frame_set(p.rt_frame_start+30); b=hip_middle(biped,"leg.01.L.upper","leg.01.R.upper")
 check(abs(b.x-a.x)<1e-4 and abs(b.y-a.y)<1e-4,"in-place hips still travel")
@@ -260,8 +260,8 @@ p.rt_in_place=False
 
 # 4 · Mixamo → CloudRig-style rig ----------------------------------------------
 p.rt_source,p.rt_target=imported,cloud
-check(bpy.ops.character_studio.retarget_automap()=={"FINISHED"},"automap to control rig")
-check(bpy.ops.character_studio.retarget_run()=={"FINISHED"},"retarget to control rig")
+check(bpy.ops.chimera_kit.retarget_automap()=={"FINISHED"},"automap to control rig")
+check(bpy.ops.chimera_kit.retarget_run()=={"FINISHED"},"retarget to control rig")
 def cloud_names(key,side):
     return {"upper_arm":(f"ORG-UpperArm.{side}",f"ORG-Forearm.{side}"),"forearm":(f"ORG-Forearm.{side}",f"ORG-Hand.{side}"),
             "thigh":(f"ORG-Thigh.{side}",f"ORG-Shin.{side}"),"shin":(f"ORG-Shin.{side}",f"ORG-Foot.{side}"),
@@ -302,8 +302,8 @@ walker=rig.build(bpy.context,p)
 walker.location=(-1.5,0,0)
 motion.generate(bpy.context,walker,p)
 p.rt_source,p.rt_target=walker,cloud
-check(bpy.ops.character_studio.retarget_run()=={"FINISHED"},"creature → control rig")
-check(p.rt_source_kind=="Character Studio rig","creature not recognised as source")
+check(bpy.ops.chimera_kit.retarget_run()=={"FINISHED"},"creature → control rig")
+check(p.rt_source_kind=="Chimera Kit rig","creature not recognised as source")
 frames=range(scene.frame_start,scene.frame_end+1,2)
 def walker_pairs():
     pairs=[]
@@ -325,20 +325,20 @@ check(max((v-positions[0]).length for v in positions)<1e-3,"planted foot slides 
 
 # 6 · Control rig → plain skeleton, and a saved bone map ------------------------
 p.rt_source,p.rt_target=cloud,source
-check(bpy.ops.character_studio.retarget_run()=={"FINISHED"},"control rig → Mixamo skeleton")
+check(bpy.ops.chimera_kit.retarget_run()=={"FINISHED"},"control rig → Mixamo skeleton")
 check(p.rt_source_kind=="CloudRig-style control rig" and p.rt_target_kind=="Mixamo skeleton","pair kinds")
 pairs=[(b,a) for a,b in mixamo_pairs(cloud_names)]
 results["control_rig_to_mixamo_deg"]=compare(cloud,source,pairs,frames,math.radians(.5),"control rig → skeleton")
 p.io_path=str(output/"bone_map.json")
 count=len(p.rt_items)
-check(bpy.ops.character_studio.retarget_map_file(operation="SAVE")=={"FINISHED"},"save bone map")
+check(bpy.ops.chimera_kit.retarget_map_file(operation="SAVE")=={"FINISHED"},"save bone map")
 p.rt_items.clear()
-check(bpy.ops.character_studio.retarget_map_file(operation="LOAD")=={"FINISHED"},"load bone map")
+check(bpy.ops.chimera_kit.retarget_map_file(operation="LOAD")=={"FINISHED"},"load bone map")
 check(len(p.rt_items)==count,"bone map round trip")
 
 # 7 · Panel draws ---------------------------------------------------------------
-from character_studio_blender import ui
+from chimera_kit import ui
 for name in ("rt_source","rt_target","rt_leg_mode","rt_align_rest","rt_in_place","rt_height_offset","mannequin_style","fingers"):
     check(name in p.bl_rna.properties,"missing property "+name)
-print("CHARACTER_STUDIO_RETARGET_PASSED",json.dumps(results))
+print("CHIMERA_KIT_RETARGET_PASSED",json.dumps(results))
 cs.unregister()

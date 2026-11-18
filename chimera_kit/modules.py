@@ -79,7 +79,7 @@ def add(context,arm,p):
     owner=arm.users_collection[0]
     foot_shape=next((b.custom_shape for b in arm.pose.bones if b.name.startswith("CTRL-leg") and b.custom_shape),None)
     pole_shape=next((b.custom_shape for b in arm.pose.bones if b.name.startswith("POLE-") and b.custom_shape),None)
-    material=geo.material("CS · appended modules",(.22,.43,.52))
+    material=geo.material("CK · appended modules",(.22,.43,.52))
     for spec in specs:
         b=arm.data.bones[spec["name"]]
         group=arm.data.collections.get(spec["group"]) or arm.data.collections.new(spec["group"])
@@ -97,7 +97,7 @@ def add(context,arm,p):
     for item in added_limbs:
         lower=arm.pose.bones[item["lower"]]
         ik=lower.constraints.new("IK")
-        ik.name="CS · Foot IK"
+        ik.name="CK · Foot IK"
         ik.target=ik.pole_target=arm
         ik.subtarget=item["control"]
         ik.pole_subtarget=item["pole"]
@@ -114,7 +114,7 @@ def add(context,arm,p):
             best=min((best-step,best,best+step),key=error)
         ik.pole_angle=best
         c=arm.pose.bones[item["foot"]].constraints.new("COPY_ROTATION")
-        c.name="CS · Foot orientation"
+        c.name="CK · Foot orientation"
         c.target=arm
         c.subtarget=item["control"]
     arm["cs_limbs"]=json.dumps(limbs)

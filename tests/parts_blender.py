@@ -7,8 +7,8 @@ import bpy
 from mathutils import Vector
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig, motion
+import chimera_kit as cs
+from chimera_kit import rig, motion
 cs.register()
 scene=bpy.context.scene
 p=scene.cs_settings
@@ -150,7 +150,16 @@ check(folded["span"]<half["span"]<flap["span"],"wing fold slider should tuck the
 p.wing_fold=0
 # Birds walk with folded wings by default.
 p.species="EAGLE"
-check(p.wing_style=="FOLDED","eagle should default to folded wings")
+check(p.wing_style=="FLAP" and p.wing_flap>.2,"eagle should flap by default")
+eagle=rig.build(bpy.context,p)
+motion.generate(bpy.context,eagle,p)
+angles=[]
+for frame in range(1,33):
+    scene.frame_set(frame)
+    angles.append(eagle.pose.bones["wing.L"].matrix_basis.to_quaternion().angle)
+check(max(angles)-min(angles)>.2,"eagle wings should beat during the default walk")
+scene.frame_set(1)
+check(abs((eagle.matrix_world @ eagle.pose.bones["wingtip.L"].tail).x)>.8,"eagle wings should be spread during the default walk")
 
 # Very long bodies and necks.
 p.species="BRONTO"
@@ -295,5 +304,94 @@ for frame in range(1,33):
     scene.frame_set(frame)
     heights.append(max((worm.matrix_world @ worm.pose.bones[n].tail).z for n in ("spine.03","spine.05","tail.02")))
 check(max(heights)-min(heights)>.03,"worm should arch its back as it moves")
-print("CHARACTER_STUDIO_PARTS_PASSED")
+# Colour coding: left red, right green, blue body, yellow head.
+p.species="BIPED"
+p.eyes=False
+biped=rig.build(bpy.context,p)
+def colour(bone):
+    obj=next(o for o in biped.children if o.type=="MESH" and o.vertex_groups and o.vertex_groups[0].name==bone)
+    return tuple(obj.data.materials[0].diffuse_color[:3])
+left,right,body,head=colour("arm.L"),colour("arm.R"),colour("spine.02"),colour("head")
+check(left[0]>left[1]*3 and left[0]>left[2]*3,"left side should be red: "+str(left))
+check(right[1]>right[0]*3 and right[1]>right[2],"right side should be green: "+str(right))
+check(body[2]>body[0]*3 and body[2]>body[1]*2,"body should be blue: "+str(body))
+check(head[0]>.6 and head[1]>.5 and head[2]<.2,"head should be yellow: "+str(head))
+# Eye placement.
+def eyes(**options):
+    p.species="BIPED"
+    p.eyes=True
+    p.eye_spacing,p.eye_height,p.eye_forward=.48,0,.45
+    for key,value in options.items(): setattr(p,key,value)
+    arm=rig.build(bpy.context,p)
+    a,b=arm.data.bones["eye.01.L"].tail_local,arm.data.bones["eye.01.R"].tail_local
+    return a,b,arm
+a,b,arm=eyes()
+gap,height,front=a.x-b.x,a.z,a.y
+a,b,_=eyes(eye_spacing=1.6)
+check(a.x-b.x>gap*1.5,"eye spacing should move the eyes apart")
+a,b,_=eyes(eye_spacing=0)
+check(0<a.x-b.x<=gap+1e-6,"eye spacing 0 should bring the eyes together without overlapping")
+a,b,_=eyes(eye_height=3)
+check(a.z>height+.2,"eye height should raise the eyes")
+a,b,arm=eyes(eye_height=-.5)
+top=head_top(arm)
+check(a.z<top-.03 and a.x>arm.data.bones["head"].head_local.x+.04,"negative eye height should put the eyes on the sides of the head")
+a,b,_=eyes(eye_forward=1.2)
+check(a.y<front-.02,"eye forward should move the eyes toward the face")
+p.eyes=False
+# Front and hind leg heights.
+p.species="HORSE"
+level=rig.build(bpy.context,p)
+def heights(arm):
+    return arm.data.bones["leg.01.L.upper"].head_local.z,arm.data.bones["leg.02.L.upper"].head_local.z
+f0,h0=heights(level)
+p.front_legs,p.hind_legs=1.5,.7
+sloped=rig.build(bpy.context,p)
+f1,h1=heights(sloped)
+check(abs(f1/f0-1.5)<.02 and abs(h1/h0-.7)<.02,"front and hind leg heights not applied")
+check(not rig.validate(sloped),"sloped horse invalid")
+spine=[b for b in sloped.data.bones if b.name.startswith("spine.")]
+check(spine[-1].tail_local.z>spine[0].head_local.z+.2,"back should slope up to the taller shoulders")
+check(sloped.data.bones["head"].head_local.z>level.data.bones["head"].head_local.z+.2,"head should rise with the shoulders")
+for name in ("leg.01.L.foot","leg.02.L.foot"):
+    check(abs(sloped.data.bones[f"toe.0{name[5]}.L"].tail_local.z-level.data.bones[f"toe.0{name[5]}.L"].tail_local.z)<.03,"feet should stay on the floor")
+motion.generate(bpy.context,sloped,p)
+limb=json.loads(sloped["cs_limbs"])[0]
+worst=0
+for frame in range(1,33):
+    scene.frame_set(frame)
+    worst=max(worst,(sloped.pose.bones[limb["foot"]].head-sloped.pose.bones[limb["control"]].head).length)
+check(worst<.01,"sloped horse cannot reach its foot targets: %.3f"%worst)
+# Gorilla: taller in front, on knuckles and flat feet, no tail.
+p.species="GORILLA"
+gorilla=rig.build(bpy.context,p)
+f,hd=heights(gorilla)
+check(len(json.loads(gorilla["cs_limbs"]))==4 and f>hd*1.3,"gorilla should stand taller on its arms than its legs")
+check(not any(b.name.startswith("tail.") for b in gorilla.data.bones) and "toe.01.L" not in gorilla.data.bones,"gorilla tail or hooves")
+check(not rig.validate(gorilla),"gorilla invalid")
+motion.generate(bpy.context,gorilla,p)
+p.species="HORSE"
+check(p.front_legs==1 and p.hind_legs==1,"leg heights should reset with the preset")
+# Crawlers stay on the ground: no part of the snake or worm dips below it at any frame.
+for species in ("SNAKE","WORM"):
+    p.species=species
+    crawler=rig.build(bpy.context,p)
+    motion.generate(bpy.context,crawler,p)
+    lowest=1e9
+    highest=-1e9
+    meshes=[o for o in crawler.children if o.type=="MESH" and o.get("cs_preview")]
+    for frame in range(1,33,2):
+        scene.frame_set(frame)
+        graph=bpy.context.evaluated_depsgraph_get()
+        for obj in meshes:
+            evaluated=obj.evaluated_get(graph)
+            for corner in evaluated.bound_box:
+                z=(evaluated.matrix_world @ Vector(corner)).z
+                lowest=min(lowest,z)
+                highest=max(highest,z)
+    check(lowest>-.012,f"{species} dips {-lowest:.3f} m below the ground")
+    check(lowest<.03,f"{species} floats {lowest:.3f} m above the ground")
+    if species=="WORM":
+        check(highest>.2,"worm should hump up as it moves")
+print("CHIMERA_KIT_PARTS_PASSED")
 cs.unregister()

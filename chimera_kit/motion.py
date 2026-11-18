@@ -11,7 +11,7 @@ MOTION_KEYS=("gait","start_frame","cycle_frames","cycles","stride","lift","stanc
     "motion_phase","tail_swing","tail_lift","tail_frequency","tail_stiffness","tail_phase","spine_bend",
     "spine_twist","spine_flex","head_bob","arm_swing","wing_flap","secondary","foot_roll","travel","motion_scope",
     "wing_style","wing_frequency","wing_fold","jaw_open","jaw_chance","jaw_rate","eye_bounce","body_wave",
-    "motion_type","jump_height","jump_distance","jump_crouch","strike_side","strike_height","body_lean")
+    "fly_height","motion_type","jump_height","jump_distance","jump_crouch","strike_side","strike_height","body_lean")
 
 def foot_offset(phase, stance, stride, lift):
     """Constant-speed planted stance, smooth lifted return. Forward is -Y."""
@@ -81,7 +81,7 @@ def keep_channel(path,scope):
     if scope=="ALL":
         return True
     names={"BODY":("CTRL-body","spine.","torso."),"TAIL":("tail.",),
-           "UPPER":("head","neck","arm.","forearm.","wing.","wingmid.","wingtip.","wingfinger.","wingrib.","antenna.","ponytail.","fin.","eye.","jaw"),"FEET":("CTRL-root","CTRL-leg.","CTRL-custom.")}
+           "UPPER":("head","neck","arm.","forearm.","wing.","wingmid.","wingtip.","wingfinger.","wingrib.","antenna.","ponytail.","fin.","eye.","jaw"),"FEET":("CTRL-root","CTRL-leg.","POLE-leg.","CTRL-custom.")}
     return any('pose.bones["'+name in path for name in names[scope])
 
 def curve_samples(context,obj):
@@ -224,7 +224,7 @@ def create_footprints(context,arm,p):
     owner=arm.users_collection[0]
     collection=next((c for c in owner.children if c.get("cs_footprints")),None)
     if not collection:
-        collection=bpy.data.collections.new("CS · Footprints")
+        collection=bpy.data.collections.new("CK · Footprints")
         collection["cs_footprints"]=True
         owner.children.link(collection)
     created=[]
@@ -365,6 +365,9 @@ def generate(context,arm,p,live=False):
         chain_counts[key]=chain_counts.get(key,0)+1
     jaw=arm.pose.bones.get("jaw")
     controls={limb["control"]:arm.pose.bones[limb["control"]] for limb in limbs}
+    poles={limb["control"]:arm.pose.bones[limb["pole"]] for limb in limbs}
+    leg_rest={limb["control"]:(arm.data.bones[limb["upper"]].head_local.copy(),Vector(limb["ankle"]),
+                               arm.data.bones[limb["pole"]].head_local.copy()) for limb in limbs}
     previous_euler={}
     def euler(bone,matrix):
         value=matrix.to_euler("XYZ",previous_euler[bone.name]) if bone.name in previous_euler else matrix.to_euler("XYZ")
@@ -377,7 +380,10 @@ def generate(context,arm,p,live=False):
     ex=max(0,p.exaggeration)
     links=max(1,len(trunk))
     steps=step_track(arm,plan,p,edited) if edited else None
-    travelling=p.travel and mode in {"WALK","SWIM","JUMP"}
+    arching=arm.get("cs_species")=="WORM" and mode=="SWIM"
+    front_length=sum(b.bone.length for b in trunk)
+    tail_length=sum(b.bone.length for b in tails if b.name.split(".")[1].isdigit())
+    travelling=p.travel and mode in {"WALK","SWIM","JUMP","FLY"}
     def ease(x):
         x=max(0.0,min(1.0,x))
         return x*x*(3-2*x)
@@ -396,7 +402,7 @@ def generate(context,arm,p,live=False):
         turn=0.0            # extra twist of the whole trunk
         arm_pose={}         # bone name -> angle about the side axis, replacing the swing
         gain=1.0            # scales the walk's rhythmic body motion
-        if mode in {"WALK","SWIM"}:
+        if mode in {"WALK","SWIM","FLY"}:
             if steps:
                 point,yaw=steps(t)
                 root_point,root_rotation=point,Matrix.Rotation(yaw,3,"Z")
@@ -439,6 +445,16 @@ def generate(context,arm,p,live=False):
         elif mode=="IDLE":
             # Standing and breathing: feet stay put, everything else settles.
             gain=.3
+        elif mode=="FLY":
+            # Airborne: the body rides up on each downstroke and the legs trail, tucked.
+            gain=.3
+            soaring=p.wing_style=="GLIDE"
+            beat=phase_t*p.wing_frequency
+            lift_body=p.fly_height*reach-math.cos(beat)*p.wing_flap*ex*reach*(.02 if soaring else .14)
+            lean+=.12
+            for limb in limbs:
+                r=limb["reach"]
+                feet[limb["control"]]=(Vector((0,.30*r,lift_body+.42*r)),Matrix.Rotation(.9,3,"X"))
         elif mode=="JUMP":
             # Crouch, push off, fly, land, recover.
             crouch=p.jump_crouch*reach
@@ -494,6 +510,19 @@ def generate(context,arm,p,live=False):
                 for bone in arms:
                     if bone.name.startswith("arm."):
                         arm_pose[bone.name]=(.5 if bone.name.endswith(side) else -.5)*busy
+        arch=0.0
+        if arching:
+            # An inchworm gathers itself into a hump and stretches out again:
+            # the middle rises and both ends tip down just enough to stay on the ground.
+            arch=(1-math.cos(phase_t))*.5*p.spine_flex*ex
+            front_total=arch
+            tail_total=arch*front_length/max(tail_length,1e-6)
+            drop=0.0
+            angle=0.0
+            for bone in trunk:
+                angle+=front_total/max(1,len(trunk))
+                drop+=bone.bone.length*math.sin(angle)
+            lift_body+=drop
         for limb in limbs:
             name=limb["control"]
             delta,foot_rotation=feet.get(name,(Vector((0,0,0)),identity))
@@ -502,6 +531,15 @@ def generate(context,arm,p,live=False):
             # motion into each control's local basis, including hand-edited rigs.
             record(control,"location","Feet · "+name,bases[name][1] @ delta)
             record(control,"rotation_euler","Feet · "+name,euler(control,local(control,foot_rotation)))
+            # The knee target turns with the leg. Left where it stood, a foot
+            # swung past it would flip the knee from one frame to the next.
+            pole_move=Vector((0,0,0))
+            if mode in {"KICK","FLY","JUMP"} and delta.length>1e-6:
+                hip_rest,ankle_rest,pole_rest=leg_rest[name]
+                hip=hip_rest+Vector((shift,0,p.body_height*reach+lift_body))
+                turned=(ankle_rest-hip_rest).rotation_difference(ankle_rest+delta-hip)
+                pole_move=hip+turned @ (pole_rest-hip_rest)-pole_rest
+            record(poles[name],"location","Poles",bases[poles[name].name][1] @ pole_move)
         record(body,"location","Body",bases[body.name][1] @ Vector((math.sin(phase_t)*p.sway*reach*ex+shift,0,
             p.body_height*reach+p.bounce*reach*math.cos(phase_t*(1 if mode=="IDLE" else p.bounce_frequency))*ex*gain+lift_body)))
         # The hips turn toward the leading foot; the trunk above counter-rotates.
@@ -513,6 +551,9 @@ def generate(context,arm,p,live=False):
         for bone in tails:
             idx=int(bone.name.split(".")[1])
             count=max(1,len(tails))
+            if arching:
+                record(bone,"rotation_euler","Tail",local(bone,Matrix.Rotation(-tail_total/count,3,side_axis)).to_euler("XYZ"))
+                continue
             lag=idx*.40*(1-p.tail_stiffness*.8)
             tail_phase=phase_t*p.tail_frequency+math.tau*p.tail_phase-lag
             record(bone,"rotation_euler","Tail",(math.sin(tail_phase+math.pi*.35)*p.tail_lift*ex*(1-idx/count),0.0,
@@ -528,11 +569,15 @@ def generate(context,arm,p,live=False):
             twist=math.cos(phase_t+w*.25)*(p.spine_twist+p.body_twist)*ex/links*gain+turn/links
             breathing=1 if mode=="IDLE" else gain
             flex=math.cos(phase_t*(1 if mode=="IDLE" else p.bounce_frequency)+w*.6+travel_phase)*p.spine_flex*ex*share*breathing+fold*share
+            if arching:
+                flex=arch/links
             matrix=Matrix.Rotation(flex,3,side_axis) @ Matrix.Rotation(sideways,3,bend) @ Matrix.Rotation(twist,3,Vector((0,0,1)) if turn else direction)
             record(bone,"rotation_euler","Spine",local(bone,matrix).to_euler("XYZ"))
         for bone in heads:
             # A long neck shares one nod between its links instead of curling up.
             angle=(math.cos(phase_t*p.bounce_frequency+.9)*p.head_bob*ex*gain-fold*.3)/(1 if bone.name=="head" else neck_count)
+            if arching and bone.name=="head":
+                angle-=arch   # keep the head level while the body humps up behind it
             record(bone,"rotation_euler","Head",local(bone,Matrix.Rotation(angle,3,side_axis)).to_euler("XYZ"))
         for bone in arms:
             # Swing about the armature's side axis so any rest pose works:
@@ -553,8 +598,10 @@ def generate(context,arm,p,live=False):
             out=index/(wing_links-1)
             outer=index>0
             style=p.wing_style
+            if mode=="FLY" and style=="FOLDED":
+                style="FLAP"   # nothing flies with its wings tucked in
             beat_phase=phase_t*p.wing_frequency
-            fold=1.0 if style=="FOLDED" else p.wing_fold
+            fold=1.0 if style=="FOLDED" else 0.0 if mode=="FLY" else p.wing_fold
             amplitude=p.wing_flap*ex*(1-fold*.85)
             share=1.0 if index==0 else .7/(wing_links-1)*1.0 if wing_links>2 else .7
             sweep=0.0       # about the vertical axis: forward and back
@@ -581,7 +628,7 @@ def generate(context,arm,p,live=False):
             droop=fold*(0 if outer else .45)
             matrix=Matrix.Rotation(sign*(tuck+sweep),3,"Z") @ Matrix.Rotation(-sign*(beat+raise_)+sign*droop,3,forward_axis)
             record(bone,"rotation_euler","Wings",local(bone,matrix).to_euler("XYZ"))
-        fold_now=1.0 if p.wing_style=="FOLDED" else p.wing_fold
+        fold_now=0.0 if mode=="FLY" else 1.0 if p.wing_style=="FOLDED" else p.wing_fold
         for bone,turn_axis,turn_angle in wing_fingers:
             record(bone,"rotation_euler","Wings",local(bone,Matrix.Rotation(turn_angle*fold_now*.92,3,turn_axis)).to_euler("XYZ"))
         for bone in followers:

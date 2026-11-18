@@ -32,7 +32,7 @@ def build(context, p):
     object_mode(context)
     plan=blueprint(p)
     name=p.character_name.strip() or p.species.title()
-    collection=bpy.data.collections.new("CS · "+name)
+    collection=bpy.data.collections.new("CK · "+name)
     context.scene.collection.children.link(collection)
     collection["cs_id"]=uuid.uuid4().hex
     arm_data=bpy.data.armatures.new(name+" · Skeleton")
@@ -46,7 +46,7 @@ def build(context, p):
     arm["cs_limbs"]=json.dumps(plan.limbs)
     arm["cs_settings"]=json.dumps({key:getattr(p,key) for key in
         ("species","size","body_length","body_width","leg_length","arm_length","head_size","leg_pairs","spine_links","tail_links",
-         "fingers","finger_links","mannequin_style","wings","antennae","ponytail","neck_length","neck_links","mannequin","jaw","antenna_length","antenna_links","tail_length","wing_span","wing_links","eyes","eye_size","chest_size","belly_size","hip_size")})
+         "fingers","finger_links","mannequin_style","wings","antennae","ponytail","neck_length","neck_links","mannequin","jaw","antenna_length","antenna_links","tail_length","wing_span","wing_links","eyes","eye_size","chest_size","belly_size","hip_size","eye_spacing","eye_height","eye_forward","front_legs","hind_legs")})
     boxes=p.mannequin and p.mannequin_style=="BOX"
     arm.show_in_front=p.show_rig and not boxes
     # Thin sticks sit inside the box figure; octahedra read better on their own.
@@ -74,7 +74,7 @@ def build(context, p):
         if hasattr(bone,"color"):
             bone.color.palette="THEME04" if not spec["deform"] else "THEME03"
         arm.pose.bones[bone.name].rotation_mode="XYZ"
-    shapes=bpy.data.collections.new("CS · Control Shapes")
+    shapes=bpy.data.collections.new("CK · Control Shapes")
     collection.children.link(shapes)
     shapes.hide_render=True
     shapes["cs_id"]=collection["cs_id"]
@@ -91,7 +91,7 @@ def build(context, p):
     for limb in plan.limbs:
         lower=arm.pose.bones[limb["lower"]]
         ik=lower.constraints.new("IK")
-        ik.name="CS · Foot IK"
+        ik.name="CK · Foot IK"
         ik.target=arm
         ik.subtarget=limb["control"]
         ik.pole_target=arm
@@ -114,14 +114,14 @@ def build(context, p):
         ik.pole_angle=best
         foot=arm.pose.bones[limb["foot"]]
         c=foot.constraints.new("COPY_ROTATION")
-        c.name="CS · Foot orientation"
+        c.name="CK · Foot orientation"
         c.target=arm
         c.subtarget=limb["control"]
     context.view_layer.update()
     ensure_motion_controls(arm)
     if p.mannequin and p.mannequin_style=="BOX":
         colors=geo.PALETTES.get(p.species, geo.PALETTES["HUMAN"])
-        shell=geo.material("CS · "+p.species+" shell",colors[0])
+        shell=geo.material("CK · "+p.species+" shell",colors[0])
         def mat_for(bone_name):
             sided=bone_name.endswith((".L",".R")) or ".L." in bone_name or ".R." in bone_name
             if p.species in {"FISH","SHARK","DOLPHIN","WHALE","TADPOLE","SNAKE","WORM"}:
@@ -146,9 +146,9 @@ def build(context, p):
             geo.rigid_bind(obj,arm,form["bone"])
     elif p.mannequin:
         colors=geo.PALETTES.get(p.species, geo.PALETTES["HUMAN"])
-        mats=[geo.material("CS · "+p.species+" shell",colors[0]),
-              geo.material("CS · "+p.species+" joints",colors[1],.30),
-              geo.material("CS · luminous eyes",(.10,.80,.73),.25,.18)]
+        mats=[geo.material("CK · "+p.species+" shell",colors[0]),
+              geo.material("CK · "+p.species+" joints",colors[1],.30),
+              geo.material("CK · luminous eyes",(.10,.80,.73),.25,.18)]
         for spec in plan.bones:
             if spec["radius"]:
                 obj=geo.segment(collection,name+" · "+spec["name"],spec["head"],spec["tail"],spec["radius"],mats[0])
@@ -164,10 +164,10 @@ def build(context, p):
             if form.get("ball"):
                 color,rough=balls[form["ball"]]
                 obj=geo.ellipsoid(collection,name+f" · {form['ball']} {i+1:02d}",form["center"],form["scale"],
-                                  geo.material("CS · "+form["ball"],color,.0,rough))
+                                  geo.material("CK · "+form["ball"],color,.0,rough))
                 geo.rigid_bind(obj,arm,form["bone"])
     if p.mannequin and "wingtip.L" in arm_data.bones:
-        membrane=geo.material("CS · "+p.species+" joints",geo.PALETTES.get(p.species,geo.PALETTES["HUMAN"])[1],.30)
+        membrane=geo.material("CK · "+p.species+" joints",geo.PALETTES.get(p.species,geo.PALETTES["HUMAN"])[1],.30)
         def panel(corners):
             """corners: (point, bone) pairs. Each corner follows its own bone, so
             the membrane closes like a fan when the wing folds."""
@@ -176,7 +176,7 @@ def build(context, p):
                 group=obj.vertex_groups.get(bone_name) or obj.vertex_groups.new(name=bone_name)
                 group.add([vertex],1.0,"REPLACE")
             obj.parent=arm
-            obj.modifiers.new("Character Studio","ARMATURE").object=arm
+            obj.modifiers.new("Chimera Kit","ARMATURE").object=arm
             obj["cs_preview"]=True
         for side in ("L","R"):
             bones=arm_data.bones
@@ -216,7 +216,7 @@ def ensure_motion_controls(arm):
                 default=value,description=description)
         for name in (limb["lower"],limb["foot"]):
             for constraint in arm.pose.bones[name].constraints:
-                if constraint.name not in {"CS · Foot IK","CS · Foot orientation"}:
+                if constraint.name not in {"CK · Foot IK","CK · Foot orientation","CS · Foot IK","CS · Foot orientation"}:
                     continue
                 fc=constraint.driver_add("influence")
                 driver=fc.driver
@@ -286,7 +286,7 @@ def finish_fit(context,arm):
 BUILD_KEYS=("species","size","body_length","body_width","leg_length","arm_length","head_size","neck_length","neck_links",
     "leg_pairs","spine_links","tail_links","fingers","finger_links","mannequin_style","wings","antennae","ponytail","mannequin",
     "jaw","antenna_length","antenna_links","tail_length","wing_span","wing_links","eyes","eye_size",
-    "chest_size","belly_size","hip_size")
+    "chest_size","belly_size","hip_size","eye_spacing","eye_height","eye_forward","front_legs","hind_legs")
 
 def stored_settings(arm):
     try:
@@ -438,7 +438,7 @@ def rebuild(context,arm,p):
 def validate(arm):
     issues=[]
     if not arm or not arm.get("cs_rig"):
-        return ["Select a Character Studio rig"]
+        return ["Select a Chimera Kit rig"]
     for name in ("CTRL-root","CTRL-body","pelvis","head"):
         if not arm.data.bones.get(name):
             issues.append("Missing bone: "+name)

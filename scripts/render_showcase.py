@@ -2,7 +2,7 @@
 
     blender --background --factory-startup --python scripts/render_showcase.py -- <job> <output folder>
 
-Jobs: hero, walk, action, wings, morph. Still frames are written as PNG;
+Jobs: hero, walk, action, wings, fly, crawl, morph. Still frames are written as PNG;
 turn a numbered sequence into a GIF or MP4 with ffmpeg.
 """
 import math
@@ -13,8 +13,8 @@ from mathutils import Vector
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import character_studio_blender as cs
-from character_studio_blender import rig, motion
+import chimera_kit as cs
+from chimera_kit import rig, motion
 
 args=sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv else sys.argv[1:]
 job,out=args[0],Path(args[1])
@@ -139,7 +139,7 @@ reset_cycle()
 if job=="hero":
     stage(30,depth=32)
     quality(2000,1000,int(args[2]) if len(args)>2 else 64)
-    front=[("BIPED",-7.4,{}),("ALIEN",-5.9,dict(antenna_length=1.6)),("MECH_TROOPER",-4.4,{}),("PENGUIN",-2.9,{}),
+    front=[("BIPED",-7.4,{}),("ALIEN",-5.9,dict(antenna_length=1.6)),("MECH_TROOPER",-4.4,{}),("GORILLA",-2.8,{}),
            ("FROG",-1.0,{}),("SPIDER",1.5,{}),("OSTRICH",3.5,{}),("MECH_POD",5.2,{}),("ANGEL",7.2,dict(wing_style="GLIDE",wing_fold=.35))]
     for species,x,options in front:
         creature(species,x,-3.0,35,**options)
@@ -187,6 +187,18 @@ elif job=="wings":
     lights((0,0,1),7)
     camera((0,-21,3.4),(0,0,1.3),lens=60)
     frames(32,"wings")
+elif job=="fly":
+    # The Fly cycle: legs tucked, body riding the beat. Glide in Wings makes it soar.
+    stage(16)
+    quality(1200,380,20)
+    creature("EAGLE",-4.6,0,50,motion_type="FLY",wing_style="GLIDE",fly_height=1.6)
+    creature("BIRD",-2.2,0,50,motion_type="FLY",wing_style="HOVER",wing_flap=.7,fly_height=3.0)
+    creature("DRAGON",.4,.8,50,motion_type="FLY",wing_style="FLAP",wing_flap=.7,wing_links=4,fly_height=.9)
+    creature("ANGEL",3.1,0,50,motion_type="FLY",wing_style="FLAP",wing_flap=.5,fly_height=.5)
+    creature("MECH_FLYER",5.2,.4,50,motion_type="FLY",wing_style="GLIDE",fly_height=.5)
+    lights((0,0,1.6),7)
+    camera((0,-22,3.6),(0,0,1.9),lens=58)
+    frames(int(args[2]) if len(args)>2 else 32,"fly")
 elif job=="crawl":
     stage(16)
     quality(1200,380,20)
