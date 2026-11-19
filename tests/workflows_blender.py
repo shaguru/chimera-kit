@@ -1,10 +1,7 @@
 """Integration checks for fit, skin, recipes, poses, path walking, NLA and baking."""
 from pathlib import Path
-import json
-import math
 import sys
 import bpy
-from mathutils import Vector
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 import chimera_kit as cs

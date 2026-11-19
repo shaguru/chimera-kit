@@ -1,11 +1,15 @@
 """Create editable Blender armatures from a shared anatomy blueprint."""
 import json
+import sys
 import math
 import uuid
 import bpy
 from mathutils import Vector
 from .anatomy import blueprint
 from . import geometry as geo
+
+# Stamped on rigs and actions, so a file records which version made them.
+VERSION=".".join(str(n) for n in sys.modules[__package__].bl_info["version"]) if __package__ else "dev"
 
 def active(context):
     obj=context.object
@@ -14,7 +18,33 @@ def active(context):
         if candidate and candidate.get("cs_rig"):
             return candidate
     candidate=context.scene.cs_settings.active_rig
-    return candidate if candidate and candidate.get("cs_rig") else None
+    return candidate if candidate and candidate.get("cs_rig") and in_scene(candidate,context.scene) else None
+
+def in_scene(obj,scene=None):
+    """Still part of the scene: deleted objects can live on in memory, held only
+    by a reference such as the creature chooser, until the file is saved and reopened."""
+    scene=scene or bpy.context.scene
+    try:
+        return scene in obj.users_scene
+    except ReferenceError:
+        return False
+
+def untouched(arm):
+    """A creature nobody has worked on yet: no animation, no fitting or appended
+    structures, no mesh of the artist's own and no mesh they have made theirs."""
+    if locked(arm):
+        return False
+    data=arm.animation_data
+    if data and (data.action or len(data.nla_tracks)):
+        return False
+    collection=arm.users_collection[0] if arm.users_collection else None
+    for obj in (collection.all_objects if collection else []):
+        if obj!=arm and not obj.get("cs_owned"):
+            return False
+    for child in arm.children:
+        if child.type=="MESH" and not child.get("cs_owned"):
+            return False
+    return True
 
 def object_mode(context):
     if context.object and context.object.mode!="OBJECT":
@@ -39,14 +69,14 @@ def build(context, p):
     arm=bpy.data.objects.new(name+" · Rig",arm_data)
     collection.objects.link(arm)
     arm["cs_rig"]=True
-    arm["cs_version"]="1.2.0"
+    arm["cs_version"]=VERSION
     arm["cs_id"]=collection["cs_id"]
     arm["cs_species"]=p.species
     arm["cs_size"]=p.size
     arm["cs_limbs"]=json.dumps(plan.limbs)
-    arm["cs_settings"]=json.dumps({key:getattr(p,key) for key in
-        ("species","size","body_length","body_width","leg_length","arm_length","head_size","leg_pairs","spine_links","tail_links",
-         "fingers","finger_links","mannequin_style","wings","antennae","ponytail","neck_length","neck_links","mannequin","jaw","antenna_length","antenna_links","tail_length","wing_span","wing_links","eyes","eye_size","chest_size","belly_size","hip_size","eye_spacing","eye_height","eye_forward","front_legs","hind_legs")})
+    arm["cs_settings"]=json.dumps({key:getattr(p,key) for key in BUILD_KEYS})
+    arm["cs_forms"]=json.dumps(plan.forms)
+    arm["cs_arm_drop"]=json.dumps(getattr(plan,"arm_drop",{}))
     boxes=p.mannequin and p.mannequin_style=="BOX"
     arm.show_in_front=p.show_rig and not boxes
     # Thin sticks sit inside the box figure; octahedra read better on their own.
@@ -74,6 +104,14 @@ def build(context, p):
         if hasattr(bone,"color"):
             bone.color.palette="THEME04" if not spec["deform"] else "THEME03"
         arm.pose.bones[bone.name].rotation_mode="XYZ"
+        # Cross-section and side direction, kept for Build mesh from skeleton.
+        section,formed,offset=bone_section(spec,plan.forms)
+        if section:
+            bone["cs_box"]=section
+            if formed: bone["cs_formed"]=True
+            if offset: bone["cs_offset"]=offset
+        if spec.get("side"):
+            bone["cs_side"]=list(spec["side"])
     shapes=bpy.data.collections.new("CK · Control Shapes")
     collection.children.link(shapes)
     shapes.hide_render=True
@@ -133,7 +171,7 @@ def build(context, p):
                 r=spec["radius"]*1.9
                 box=(r,r,r*.78,r*.78)
             if box:
-                obj=geo.box_segment(collection,name+" · "+spec["name"],spec["head"],spec["tail"],box,mat_for(spec["name"]))
+                obj=geo.box_segment(collection,name+" · "+spec["name"],spec["head"],spec["tail"],box,mat_for(spec["name"]),hint=spec.get("side"))
                 geo.rigid_bind(obj,arm,spec["name"])
         for i,form in enumerate(plan.forms):
             sx,sy,sz=form["scale"]
@@ -141,6 +179,10 @@ def build(context, p):
                 continue   # drawn below, in every style
             # Joint balls and eyes belong to the rounded style only.
             if form["color"]==2 or (abs(sx-sy)<1e-9 and abs(sy-sz)<1e-9):
+                continue
+            if form.get("skull"):
+                obj=geo.skull(collection,name+" · skull",form["center"],form["scale"],mat_for(form["bone"]),form["skull"],False)
+                geo.rigid_bind(obj,arm,form["bone"])
                 continue
             obj=geo.box_form(collection,name+f" · form {i+1:02d}",form["center"],form["scale"],mat_for(form["bone"]))
             geo.rigid_bind(obj,arm,form["bone"])
@@ -155,6 +197,10 @@ def build(context, p):
                 geo.rigid_bind(obj,arm,spec["name"])
         for i,form in enumerate(plan.forms):
             if form.get("ball"):
+                continue
+            if form.get("skull"):
+                obj=geo.skull(collection,name+" · skull",form["center"],form["scale"],mats[0],form["skull"],True)
+                geo.rigid_bind(obj,arm,form["bone"])
                 continue
             obj=geo.ellipsoid(collection,name+f" · form {i+1:02d}",form["center"],form["scale"],mats[form["color"]])
             geo.rigid_bind(obj,arm,form["bone"])
@@ -178,27 +224,46 @@ def build(context, p):
             obj.parent=arm
             obj.modifiers.new("Chimera Kit","ARMATURE").object=arm
             obj["cs_preview"]=True
-        for side in ("L","R"):
-            bones=arm_data.bones
-            mids=sorted((b for b in bones if b.name.startswith("wingmid.") and b.name.endswith(side)),
-                        key=lambda b:int(b.name.split(".")[1]))
-            edge=[bones["wing."+side]]+mids+[bones["wingtip."+side]]
-            fingers=[bones[f"wingfinger.{i}.{side}"] for i in (1,2,3)]
-            # Trailing corner at each joint: its rib, or the first finger at the last joint.
-            trailing={}
-            for index,bone in enumerate(edge[1:],1):
-                rib=bones.get(f"wingrib.{index}.{side}")
-                trailing[index]=(rib.tail_local,rib.name) if rib else (fingers[0].tail_local,fingers[0].name)
-            if len(edge)>2:
-                panel([(edge[0].head_local,edge[0].name),(edge[1].head_local,edge[1].name),trailing[1]])
-            for index in range(1,len(edge)-1):
-                panel([(edge[index].head_local,edge[index].name),(edge[index+1].head_local,edge[index+1].name),
-                       trailing[index+1],trailing[index]])
-            base=(edge[-1].head_local,edge[-1].name)
-            for i in range(2):
-                panel([base,(fingers[i].tail_local,fingers[i].name),(fingers[i+1].tail_local,fingers[i+1].name)])
+        for corners in geo.wing_panels(arm_data.bones):
+            panel(corners)
     select(context,arm)
     return arm
+
+def bone_section(spec,forms):
+    """A bone's flesh for Build mesh from skeleton: its box, else the body form
+    drawn on it, else its radius. Returns ((width0, depth0, width1, depth1),
+    drawn as a form, offset of that form from the bone's own line)."""
+    if not spec["deform"]:
+        return None,False,None
+    if spec.get("box"):
+        return list(spec["box"]),False,None
+    head,tail=Vector(spec["head"]),Vector(spec["tail"])
+    axis=tail-head
+    if axis.length<1e-9:
+        return None,False,None
+    unit,side,front=geo.box_frame(axis,spec.get("side"))
+    best=offset=None
+    for form in forms:
+        sx,sy,sz=form["scale"]
+        if form["bone"]!=spec["name"] or form.get("ball") or form["color"]==2:
+            continue
+        if abs(sx-sy)<1e-9 and abs(sy-sz)<1e-9 and form["color"]==1:
+            continue   # a joint ball
+        w=2*Vector((sx*side.x,sy*side.y,sz*side.z)).length
+        d=2*Vector((sx*front.x,sy*front.y,sz*front.z)).length
+        if not best or w*d>best[0]*best[1]:
+            best=(w,d)
+            delta=Vector(form["center"])-(head+tail)*.5
+            delta-=unit*delta.dot(unit)
+            offset=list(delta) if delta.length>1e-5 else None
+    if spec["radius"]:
+        r=spec["radius"]*2
+        if best:
+            return [max(r,best[0]),max(r,best[1]),max(r*.75,best[0]),max(r*.75,best[1])],False,offset
+        return [r,r,r*.75,r*.75],False,None
+    if best:
+        return [best[0],best[1],best[0],best[1]],True,offset
+    return None,False,None
 
 def ensure_motion_controls(arm):
     """Upgrade an existing rig with editable per-limb controls without rebuilding."""
@@ -228,7 +293,7 @@ def ensure_motion_controls(arm):
                 variable.targets[0].id=arm
                 variable.targets[0].data_path=control.path_from_id('["cs_ik_weight"]')
                 driver.expression="weight"
-    arm["cs_version"]="1.2.0"
+    arm["cs_version"]=VERSION
 
 def reset(context,arm):
     select(context,arm)
@@ -286,7 +351,8 @@ def finish_fit(context,arm):
 BUILD_KEYS=("species","size","body_length","body_width","leg_length","arm_length","head_size","neck_length","neck_links",
     "leg_pairs","spine_links","tail_links","fingers","finger_links","mannequin_style","wings","antennae","ponytail","mannequin",
     "jaw","antenna_length","antenna_links","tail_length","wing_span","wing_links","eyes","eye_size",
-    "chest_size","belly_size","hip_size","eye_spacing","eye_height","eye_forward","front_legs","hind_legs")
+    "chest_size","belly_size","hip_size","eye_spacing","eye_height","eye_forward","front_legs","hind_legs",
+    "hand_size","foot_length","foot_thickness","wing_angle","wing_height","curve","head_shape","arm_raise","chest_width","hip_width")
 
 def stored_settings(arm):
     try:
@@ -332,7 +398,10 @@ def rebuild(context,arm,p):
     same name, place, identity, animation, layers, limb settings, bound
     meshes and footsteps. Returns the new armature."""
     from . import motion
+    from . import skin
     object_mode(context)
+    old_skin=skin.find(arm)
+    skin_settings=(old_skin.get("cs_skin_style"),old_skin.get("cs_skin_thickness"),old_skin.get("cs_skin_smooth"),old_skin.get("cs_skin_taper"),old_skin.get("cs_skin_base")) if old_skin else None
     old_collection=arm.users_collection[0]
     base=arm.name[:-len(" · Rig")] if arm.name.endswith(" · Rig") else arm.name
     was_active=context.view_layer.objects.active==arm
@@ -430,6 +499,10 @@ def rebuild(context,arm,p):
     for data in list(bpy.data.armatures):
         if data.users==0 and data.name.startswith("~"): bpy.data.armatures.remove(data)
     settings.active_rig=new
+    if skin_settings:
+        # The built mesh follows the body sliders until the artist takes it over.
+        try: skin.build(context,new,p,*skin_settings)
+        except RuntimeError: pass
     if was_active:
         select(context,new)
     context.view_layer.update()

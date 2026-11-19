@@ -336,8 +336,7 @@ p.rt_items.clear()
 check(bpy.ops.chimera_kit.retarget_map_file(operation="LOAD")=={"FINISHED"},"load bone map")
 check(len(p.rt_items)==count,"bone map round trip")
 
-# 7 · Panel draws ---------------------------------------------------------------
-from chimera_kit import ui
+# 7 · Panel properties ----------------------------------------------------------
 for name in ("rt_source","rt_target","rt_leg_mode","rt_align_rest","rt_in_place","rt_height_offset","mannequin_style","fingers"):
     check(name in p.bl_rna.properties,"missing property "+name)
 print("CHIMERA_KIT_RETARGET_PASSED",json.dumps(results))

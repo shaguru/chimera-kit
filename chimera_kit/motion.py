@@ -1,10 +1,14 @@
 """Stance/swing locomotion baked to native Blender actions. One optional timer drives live updates."""
 import json
+import sys
 import hashlib
 import math
 import uuid
 import bpy
 from mathutils import Vector, Matrix, Euler
+
+# Stamped on rigs and actions, so a file records which version made them.
+VERSION=".".join(str(n) for n in sys.modules[__package__].bl_info["version"]) if __package__ else "dev"
 
 MOTION_KEYS=("gait","start_frame","cycle_frames","cycles","stride","lift","stance","foot_planting",
     "exaggeration","body_height","bounce","bounce_frequency","sway","body_roll","body_pitch","body_twist",
@@ -343,6 +347,8 @@ def generate(context,arm,p,live=False):
     heads=[b for b in arm.pose.bones if b.name in {"neck","head"} or b.name.startswith("neck.")]
     neck_count=max(1,sum(1 for b in heads if b.name!="head"))
     arms=[b for b in arm.pose.bones if b.name.startswith(("arm.","forearm."))]
+    try: arm_drop=json.loads(arm.get("cs_arm_drop","{}"))
+    except ValueError: arm_drop={}
     wings=[b for b in arm.pose.bones if b.name.startswith(("wing.","wingmid.","wingtip."))]
     wing_links=max(2,sum(1 for b in wings if b.name.endswith("L")))
     def wing_index(bone):
@@ -589,7 +595,14 @@ def generate(context,arm,p,live=False):
                 angle=-(1-math.cos(side_phase))*.3*p.arm_swing*ex*gain
             if bone.name in arm_pose:
                 angle=angle*.3+arm_pose[bone.name]
-            record(bone,"rotation_euler","Arms",local(bone,Matrix.Rotation(angle,3,side_axis)).to_euler("XYZ"))
+            matrix=Matrix.Rotation(angle,3,side_axis)
+            if bone.name in arm_drop:
+                # Arms built in a T-pose come down to the sides before they swing.
+                matrix=matrix @ Matrix.Rotation(arm_drop[bone.name],3,"Y")
+            elif bone.parent and bone.parent.name in arm_drop:
+                lowered=Matrix.Rotation(arm_drop[bone.parent.name],3,"Y")
+                matrix=lowered.inverted() @ matrix @ lowered
+            record(bone,"rotation_euler","Arms",local(bone,matrix).to_euler("XYZ"))
         for bone in wings:
             sign=1 if bone.name.endswith("L") else -1
             index=wing_index(bone)
@@ -695,7 +708,7 @@ def generate(context,arm,p,live=False):
     action["cs_gait"]=p.gait
     action["cs_parameters"]=json.dumps({key:scope if key=="motion_scope" else getattr(p,key) for key in MOTION_KEYS})
     action["cs_rig_id"]=arm["cs_id"]
-    action["cs_version"]="1.2.0"
+    action["cs_version"]=VERSION
     arm["cs_last_action"]=action.name
     return action
 

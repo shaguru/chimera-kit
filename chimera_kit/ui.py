@@ -20,7 +20,7 @@ class CSPanel:
 
 class CS_PT_studio(CSPanel,bpy.types.Panel):
     bl_idname="CS_PT_studio"
-    bl_label="CHARACTER STUDIO"
+    bl_label="CHIMERA KIT"
     bl_order=0
     def draw(self,context):
         p=context.scene.cs_settings
@@ -30,7 +30,9 @@ class CS_PT_studio(CSPanel,bpy.types.Panel):
         row=layout.row(align=True)
         row.scale_y=1.5
         row.prop(p,"ui_tab",expand=True)
-        layout.prop(p,"active_rig",text="Creature")
+        row=layout.row(align=True)
+        row.prop(p,"active_rig",text="Creature")
+        row.operator("chimera_kit.delete",text="",icon="TRASH")
         arm=rig.active(context)
         if arm:
             row=layout.row(align=True)
@@ -45,16 +47,20 @@ class CS_PT_studio(CSPanel,bpy.types.Panel):
 
 class CS_PT_build(CSPanel,bpy.types.Panel):
     bl_idname="CS_PT_build"
-    bl_label="Creature builder"
+    bl_label="1 · Creature skeleton"
     tab="BUILD"
     bl_order=1
     bl_parent_id="CS_PT_studio"
     def draw(self,context):
         layout=self.layout
         p=context.scene.cs_settings
-        layout.prop(p,"species",text="Preset")
-        from . import PRESETS
-        layout.label(text=f"{len(PRESETS)} presets · Biped is the box figure",icon="OUTLINER_OB_ARMATURE")
+        layout.label(text="Builds the rig: bones, IK and controls.",icon="BONE_DATA")
+        from . import PRESETS, PRESET_ITEMS
+        label=next((item[1] for item in PRESET_ITEMS if item[0]==p.species),p.species.title())
+        row=layout.row(align=True)
+        row.scale_y=1.3
+        row.operator_menu_enum("chimera_kit.choose_preset","species",text="Preset: "+label,icon="OUTLINER_OB_ARMATURE")
+        layout.label(text=f"{len(PRESETS)} presets · picking one builds it now",icon="INFO")
         layout.prop(p,"character_name")
         layout.prop(p,"size")
         col=layout.column(align=True)
@@ -62,6 +68,8 @@ class CS_PT_build(CSPanel,bpy.types.Panel):
         col.prop(p,"body_width")
         col.prop(p,"leg_length")
         col.prop(p,"head_size")
+        if p.species in {"BIPED","HUMAN","APE","ANGEL","CENTAUR"}:
+            col.prop(p,"head_shape")
         if p.species not in {"FISH","SHARK","DOLPHIN","WHALE","TADPOLE","SNAKE","WORM"}:
             col.prop(p,"neck_length")
             shape=layout.box()
@@ -70,7 +78,22 @@ class CS_PT_build(CSPanel,bpy.types.Panel):
             row.prop(p,"chest_size")
             row.prop(p,"belly_size")
             row.prop(p,"hip_size")
-        if p.species in {"BIPED","HUMAN","ALLOSAUR","TREX","ALIEN","CENTAUR","APE","MECH","ANGEL","PENGUIN","MECH_TROOPER","MECH_FLYER","MECH_POD"}: col.prop(p,"arm_length")
+            row=shape.row(align=True)
+            row.prop(p,"chest_width")
+            row.prop(p,"hip_width")
+        swimmer=p.species in {"FISH","SHARK","DOLPHIN","WHALE","TADPOLE","SNAKE","WORM"}
+        if p.species in {"BIPED","HUMAN","ALLOSAUR","TREX","ALIEN","CENTAUR","APE","MECH","ANGEL","PENGUIN","MECH_TROOPER","MECH_FLYER","MECH_POD"}:
+            col.prop(p,"arm_length")
+            if p.species not in {"MECH_POD"}:
+                row=col.row(align=True)
+                row.prop(p,"hand_size")
+                if p.species not in {"ALLOSAUR","TREX"}:
+                    row.prop(p,"arm_raise")
+        if not swimmer:
+            row=col.row(align=True)
+            row.prop(p,"foot_length",text="Foot length")
+            row.prop(p,"foot_thickness",text="Thickness")
+            col.prop(p,"curve")
         layout.separator()
         box=layout.box()
         box.label(text="Custom structure",icon="BONE_DATA")
@@ -104,6 +127,9 @@ class CS_PT_build(CSPanel,bpy.types.Panel):
             row=box.row(align=True)
             row.prop(p,"wing_span")
             row.prop(p,"wing_links",text="Joints")
+            row=box.row(align=True)
+            row.prop(p,"wing_angle",text="Angle")
+            row.prop(p,"wing_height",text="Height")
         if p.eyes:
             col=box.column(align=True)
             col.prop(p,"eye_size")
@@ -123,7 +149,7 @@ class CS_PT_build(CSPanel,bpy.types.Panel):
             layout.prop(p,"mannequin_style",expand=True)
         row=layout.row()
         row.scale_y=2.6
-        row.operator("chimera_kit.build",text="Build new creature",icon="ADD")
+        row.operator("chimera_kit.build",text="Build another creature",icon="ADD")
         arm=rig.active(context)
         layout.prop(p,"live_build",toggle=True,icon="FILE_REFRESH")
         if arm and arm.get("cs_species")!=p.species:
@@ -134,12 +160,13 @@ class CS_PT_build(CSPanel,bpy.types.Panel):
             reason=rig.locked(arm)
             layout.label(text=("Live body off: creature "+reason) if reason else "Sliders reshape the active creature.",icon="INFO")
         else:
-            layout.label(text="Each build creates a separate editable rig.",icon="INFO")
+            layout.label(text="Each build adds a separate rig; presets replace.",icon="INFO")
 
 class CS_PT_modules(CSPanel,bpy.types.Panel):
     bl_idname="CS_PT_modules"
-    bl_label="Append custom structures"
+    bl_label="1a · Append structures"
     tab="BUILD"
+    bl_order=2
     bl_parent_id="CS_PT_build"
     bl_options={"DEFAULT_CLOSED"}
     def draw(self,context):
@@ -390,9 +417,9 @@ class CS_PT_layers(CSPanel,bpy.types.Panel):
 
 class CS_PT_pose(CSPanel,bpy.types.Panel):
     bl_idname="CS_PT_pose"
-    bl_label="Pose & fit"
+    bl_label="1b · Pose & fit"
     tab="BUILD"
-    bl_order=2
+    bl_order=3
     bl_parent_id="CS_PT_studio"
     def draw(self,context):
         layout=self.layout
@@ -416,9 +443,9 @@ class CS_PT_pose(CSPanel,bpy.types.Panel):
 
 class CS_PT_skin(CSPanel,bpy.types.Panel):
     bl_idname="CS_PT_skin"
-    bl_label="Skin your mesh"
+    bl_label="3 · Skin your own mesh"
     tab="BUILD"
-    bl_order=3
+    bl_order=5
     bl_parent_id="CS_PT_studio"
     def draw(self,context):
         layout=self.layout
@@ -428,6 +455,47 @@ class CS_PT_skin(CSPanel,bpy.types.Panel):
         row.operator("chimera_kit.bind",text="Distance weights").method="ENVELOPE"
         row.operator("chimera_kit.bind",text="Auto weights").method="AUTO"
         layout.operator("chimera_kit.preview",text="Show / hide mannequin",icon="HIDE_OFF")
+
+class CS_PT_mesh(CSPanel,bpy.types.Panel):
+    bl_idname="CS_PT_mesh"
+    bl_label="2 · Mesh from skeleton (experimental)"
+    tab="BUILD"
+    bl_order=4
+    bl_parent_id="CS_PT_studio"
+    def draw(self,context):
+        from . import skin
+        layout=self.layout
+        p=context.scene.cs_settings
+        arm=rig.active(context)
+        layout.enabled=arm is not None
+        box=layout.box()
+        box.alert=True
+        box.label(text="Experimental: still being refined.",icon="EXPERIMENTAL")
+        box.label(text="Builds a skinned mesh on the skeleton above.")
+        col=layout.column(align=True)
+        col.prop(p,"skin_style",text="")
+        row=col.row(align=True)
+        row.prop(p,"skin_base",expand=True)
+        if arm and p.skin_base!="PROCEDURAL" and not skin.template_fits(arm):
+            col.label(text="Templates fit two-legged creatures with arms",icon="INFO")
+        row=col.row(align=True)
+        row.prop(p,"skin_thickness")
+        row.prop(p,"skin_smooth")
+        row=col.row(align=True)
+        row.prop(p,"skin_taper")
+        row.prop(p,"skin_limbs")
+        if arm and "arm.L" in arm.data.bones:
+            row=col.row(align=True)
+            row.prop(p,"skin_pose",expand=True)
+        existing=skin.find(arm) if arm else None
+        row=layout.row()
+        row.scale_y=1.8
+        row.operator("chimera_kit.skin",text="Rebuild mesh" if existing else "Build mesh from skeleton",icon="MESH_MONKEY").action="BUILD"
+        if existing:
+            row=layout.row(align=True)
+            row.operator("chimera_kit.skin",text="Make it mine",icon="UNLINKED").action="KEEP"
+            row.operator("chimera_kit.skin",text="Delete",icon="TRASH").action="DELETE"
+            layout.label(text="Follows the body sliders until you make it yours.",icon="INFO")
 
 class CS_PT_files(CSPanel,bpy.types.Panel):
     bl_idname="CS_PT_files"
@@ -526,4 +594,4 @@ class CS_PT_retarget(CSPanel,bpy.types.Panel):
         row.operator("chimera_kit.retarget_run",icon="ACTION")
         layout.label(text="Layers and footsteps are included as played.",icon="INFO")
 
-CLASSES=(CS_PT_studio,CS_PT_build,CS_PT_modules,CS_PT_motion,CS_PT_tuning,CS_PT_limbs,CS_PT_layers,CS_PT_pose,CS_PT_skin,CS_PT_files,CS_PT_retarget)
+CLASSES=(CS_PT_studio,CS_PT_build,CS_PT_modules,CS_PT_motion,CS_PT_tuning,CS_PT_limbs,CS_PT_layers,CS_PT_pose,CS_PT_mesh,CS_PT_skin,CS_PT_files,CS_PT_retarget)

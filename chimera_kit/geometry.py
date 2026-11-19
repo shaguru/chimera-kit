@@ -31,6 +31,8 @@ PALETTES = {
     "GECKO": ((.42,.55,.16),(.90,.72,.30)),
     "TREX": ((.30,.24,.16),(.75,.50,.25)),
     "GORILLA": ((.07,.07,.08),(.30,.30,.33)),
+    "DOG": ((.58,.38,.18),(.90,.76,.55)),
+    "CAT": ((.78,.42,.12),(.96,.88,.74)),
     "CENTAUR": ((.33, .20, .11), (.86, .66, .45)),
     "BIPED": ((.80,.56,.10),(.13,.42,.80)),
     "HUMAN": ((0.13, .38, .56), (.95, .44, .12)),
@@ -79,17 +81,24 @@ def mesh_object(collection, name, vertices, faces, mat=None, smooth=True):
     obj["cs_owned"] = True
     return obj
 
-def box_frame(axis):
-    """Side-to-side and front-to-back directions for a bone axis."""
+def box_frame(axis,hint=None):
+    """Side-to-side and front-to-back directions for a bone axis.
+    hint: the side-to-side direction to prefer, for limbs built in another pose."""
     axis=axis.normalized()
     side=Vector((1,0,0)) if abs(axis.x)<.8 else Vector((0,1,0))
+    if hint is not None and abs(Vector(hint).normalized().dot(axis))<.95:
+        side=Vector(hint)
     side=(side-axis*side.dot(axis)).normalized()
     return axis,side,axis.cross(side).normalized()
 
-def box_segment(collection, name, head, tail, box, mat, gap=.03):
+def box_segment(collection, name, head, tail, box, mat, gap=.03, hint=None):
     """Tapered, chamfered box along a bone: flat shaded like a figure-mode biped."""
+    verts,faces=box_shell(head,tail,box,gap,hint)
+    return mesh_object(collection,name,verts,faces,mat,smooth=False)
+
+def box_shell(head, tail, box, gap=.03, hint=None):
     head,tail=Vector(head),Vector(tail)
-    axis,side,front=box_frame(tail-head)
+    axis,side,front=box_frame(tail-head,hint)
     length=(tail-head).length
     w0,d0,w1,d1=box
     chamfer=min(.12,.35*min(w0,d0,w1,d1)/max(length,1e-6))
@@ -106,10 +115,82 @@ def box_segment(collection, name, head, tail, box, mat, gap=.03):
             k=(i+1)%4
             faces.append((j*4+i,j*4+k,(j+1)*4+k,(j+1)*4+i))
     faces.append((12,13,14,15))
-    return mesh_object(collection,name,verts,faces,mat,smooth=False)
+    return verts,faces
+
+# A human head from chin to crown: (height, width, depth, offset). Height runs
+# from -1 at the chin to 1 at the crown; offset slides the section back (+) or
+# forward (-) as a fraction of the head's depth.
+SKULL=((-1.0,.34,.34,-.38),(-.80,.58,.56,-.28),(-.45,.80,.80,-.10),(-.05,.93,.96,.02),
+       (.35,1.0,1.12,.12),(.75,.88,.98,.14),(1.0,.50,.56,.12))
+
+def skull_rows(amount,round_):
+    """SKULL blended with a plain block or ball: amount 0 is plain, 1 is the full head."""
+    rows=[]
+    for v,w,d,off in SKULL:
+        plain=max(.30,(1-v*v)**.5) if round_ else (.74 if abs(v)==1 else 1.0)
+        rows.append((v,plain+(w-plain)*amount,plain+(d-plain)*amount,off*amount))
+    return rows
+
+def skull(collection, name, center, scale, mat, amount, round_):
+    """A head lofted through skull_rows: four flat sides for the box figure,
+    a smooth oval for the rounded one."""
+    verts,faces=skull_shell(center,scale,amount,round_)
+    return mesh_object(collection,name,verts,faces,mat,smooth=round_)
+
+def skull_shell(center, scale, amount, round_):
+    center=Vector(center)
+    sx,sy,sz=scale
+    n=16 if round_ else 4
+    verts=[]
+    rows=skull_rows(amount,round_)
+    for v,w,d,off in rows:
+        for i in range(n):
+            if round_:
+                phi=math.tau*i/n
+                x,y=math.cos(phi),math.sin(phi)
+            else:
+                x,y=((-1,-1),(1,-1),(1,1),(-1,1))[i]
+            verts.append(center+Vector((sx*w*x,sy*(d*y+off),sz*v)))
+    faces=[tuple(reversed(range(n)))]
+    for j in range(len(rows)-1):
+        for i in range(n):
+            k=(i+1)%n
+            faces.append((j*n+i,j*n+k,(j+1)*n+k,(j+1)*n+i))
+    faces.append(tuple(range((len(rows)-1)*n,len(rows)*n)))
+    return verts,faces
+
+def wing_panels(bones):
+    """Membrane panels for a winged skeleton: lists of (point, bone name) corners.
+    Each corner follows its own bone, so the membrane closes like a fan."""
+    panels=[]
+    for side in ("L","R"):
+        if "wingtip."+side not in bones:
+            continue
+        mids=sorted((b for b in bones if b.name.startswith("wingmid.") and b.name.endswith(side)),
+                    key=lambda b:int(b.name.split(".")[1]))
+        edge=[bones["wing."+side]]+mids+[bones["wingtip."+side]]
+        fingers=[bones[f"wingfinger.{i}.{side}"] for i in (1,2,3)]
+        # Trailing corner at each joint: its rib, or the first finger at the last joint.
+        trailing={}
+        for index,bone in enumerate(edge[1:],1):
+            rib=bones.get(f"wingrib.{index}.{side}")
+            trailing[index]=(rib.tail_local.copy(),rib.name) if rib else (fingers[0].tail_local.copy(),fingers[0].name)
+        if len(edge)>2:
+            panels.append([(edge[0].head_local.copy(),edge[0].name),(edge[1].head_local.copy(),edge[1].name),trailing[1]])
+        for index in range(1,len(edge)-1):
+            panels.append([(edge[index].head_local.copy(),edge[index].name),(edge[index+1].head_local.copy(),edge[index+1].name),
+                   trailing[index+1],trailing[index]])
+        base=(edge[-1].head_local.copy(),edge[-1].name)
+        for i in range(2):
+            panels.append([base,(fingers[i].tail_local.copy(),fingers[i].name),(fingers[i+1].tail_local.copy(),fingers[i+1].name)])
+    return panels
 
 def box_form(collection, name, center, scale, mat):
     """Axis-aligned chamfered block standing in for a rounded body form."""
+    verts,faces=form_shell(center,scale)
+    return mesh_object(collection,name,verts,faces,mat,smooth=False)
+
+def form_shell(center, scale):
     center=Vector(center)
     sx,sy,sz=(v*.86 for v in scale)
     verts=[]
@@ -122,7 +203,7 @@ def box_form(collection, name, center, scale, mat):
             k=(i+1)%4
             faces.append((j*4+i,j*4+k,(j+1)*4+k,(j+1)*4+i))
     faces.append((12,13,14,15))
-    return mesh_object(collection,name,verts,faces,mat,smooth=False)
+    return verts,faces
 
 def ellipsoid(collection, name, center, scale, mat, segments=16, rings=10):
     center, scale = Vector(center), Vector(scale)

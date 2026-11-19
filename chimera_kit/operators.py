@@ -82,32 +82,85 @@ class CS_OT_add_module(Operator):
         settings(context).status=f"Added {len(names)} bones. Use Fit to shape the new structure; update motion afterwards."
         return {"FINISHED"}
 
+def remove_creature(context,arm):
+    """Delete a creature and everything the kit made for it. A mesh of the artist's
+    own linked into its collection is kept, at the scene root."""
+    collection=arm.users_collection[0] if arm.users_collection else None
+    rig.object_mode(context)
+    if collection:
+        for obj in list(collection.all_objects):
+            if obj==arm or obj.get("cs_owned"):
+                bpy.data.objects.remove(obj,do_unlink=True)
+            else:
+                if context.scene.collection.objects.get(obj.name) is None:
+                    context.scene.collection.objects.link(obj)
+                world=obj.matrix_world.copy()
+                obj.parent=None
+                obj.matrix_world=world
+        bpy.data.collections.remove(collection)
+    else:
+        bpy.data.objects.remove(arm,do_unlink=True)
+    if settings(context).active_rig is None or not rig.in_scene(settings(context).active_rig,context.scene):
+        settings(context).active_rig=None
+
+def put_away(context,arm):
+    """Hide a creature someone has worked on, so a new one can take the stage."""
+    collection=arm.users_collection[0] if arm.users_collection else None
+    if collection and collection!=context.scene.collection:
+        layer=context.view_layer.layer_collection.children.get(collection.name)
+        if layer:
+            layer.hide_viewport=True
+        collection.hide_render=True
+    else:
+        arm.hide_set(True)
+
+class CS_OT_choose_preset(Operator):
+    bl_idname="chimera_kit.choose_preset"
+    bl_label="Preset"
+    bl_description=("Build this creature now. The current creature is replaced if nothing has been done to it yet "
+                    "(no animation, fitting, appended structures or mesh of your own); otherwise it is hidden and kept")
+    bl_property="species"
+    bl_options={"REGISTER","UNDO"}
+    def _items(self,context):
+        from . import PRESET_ITEMS
+        return PRESET_ITEMS
+    species: bpy.props.EnumProperty(name="Creature",items=_items)
+    def execute(self,context):
+        p=settings(context)
+        old=rig.active(context)
+        p.species=self.species        # resets the sliders to the preset's own values
+        kept=""
+        if old:
+            if rig.untouched(old):
+                remove_creature(context,old)
+            else:
+                put_away(context,old)
+                kept=old.name
+        try:
+            arm=rig.build(context,p)
+        except Exception as exc:
+            self.report({"ERROR"},"Build failed: "+str(exc))
+            return {"CANCELLED"}
+        p.active_rig=arm
+        p.status=f"Built {p.species.replace('_',' ').title()} · {len(arm.data.bones)} bones"+(f" · {kept} hidden, kept" if kept else "")
+        self.report({"INFO"},p.status)
+        return {"FINISHED"}
+
 class CS_OT_delete(Operator):
     bl_idname="chimera_kit.delete"
-    bl_label="Delete owned rig"
+    bl_label="Delete creature"
+    bl_description="Delete the active creature, its rig and the meshes the kit made for it. A mesh of your own is kept"
     bl_options={"REGISTER","UNDO"}
+    def invoke(self,context,event):
+        return context.window_manager.invoke_confirm(self,event)
     def execute(self,context):
         arm=active(context)
         if not arm:
             self.report({"WARNING"},"Select a Chimera Kit rig")
             return {"CANCELLED"}
-        collection=arm.users_collection[0] if arm.users_collection else None
-        if collection:
-            rig.object_mode(context)
-            for obj in list(collection.all_objects):
-                if obj==arm or obj.get("cs_owned"):
-                    bpy.data.objects.remove(obj,do_unlink=True)
-                else:
-                    # A custom artist mesh can be linked into this collection.
-                    # Preserve it at the scene root when deleting the rig.
-                    if context.scene.collection.objects.get(obj.name) is None:
-                        context.scene.collection.objects.link(obj)
-                    world=obj.matrix_world.copy()
-                    obj.parent=None
-                    obj.matrix_world=world
-            bpy.data.collections.remove(collection)
+        remove_creature(context,arm)
         settings(context).active_rig=None
-        settings(context).status="Owned rig deleted"
+        settings(context).status="Creature deleted"
         return {"FINISHED"}
 
 class CS_OT_validate(Operator):
@@ -608,6 +661,55 @@ class CS_OT_preview(Operator):
             obj.hide_render=hidden
         return {"FINISHED"}
 
+class CS_OT_skin(Operator):
+    bl_idname="chimera_kit.skin"
+    bl_label="Mesh from skeleton"
+    bl_description="Build a mesh around the skeleton, with edge loops at every joint, and skin it"
+    bl_options={"REGISTER","UNDO"}
+    action: EnumProperty(items=[("BUILD","Build","Build or rebuild the mesh and skin it to the skeleton"),
+        ("KEEP","Make it mine","Stop rebuilding this mesh with the body sliders, so it is safe to edit and sculpt"),
+        ("DELETE","Delete","Remove the built mesh and show the mannequin again")])
+    def execute(self,context):
+        from . import skin
+        arm=active(context)
+        p=settings(context)
+        if not arm:
+            self.report({"WARNING"},"Build or choose a creature first")
+            return {"CANCELLED"}
+        if context.mode!="OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        if self.action=="KEEP":
+            obj=skin.keep(arm)
+            p.status=(obj.name+" is yours now: edit it freely") if obj else "No built mesh to keep"
+            return {"FINISHED"}
+        if self.action=="DELETE":
+            skin.remove(arm)
+            for child in arm.children:
+                if child.get("cs_preview"):
+                    child.hide_set(False)
+                    child.hide_render=False
+            p.status="Built mesh removed"
+            return {"FINISHED"}
+        stored=rig.stored_settings(arm)
+        target={"A":skin.a_pose_raise(p) if "arm.L" in arm.data.bones else None,"T":1.0}.get(p.skin_pose)
+        if (target is not None and "arm.L" in arm.data.bones and abs(stored.get("arm_raise",1)-target)>1e-3 and not rig.locked(arm)
+                and stored.get("species")==p.species and not rig.differs(arm,p)):
+            # Set the arm rest first (an A or a T); any cycle is regenerated so it still swings them at the sides.
+            p.arm_raise=target
+            arm=rig.rebuild(context,arm,p)
+            action=arm.animation_data.action if arm.animation_data else None
+            if action and action.get("cs_motion"):
+                try: motion.generate(context,arm,p,live=True)
+                except Exception: pass
+        try:
+            obj=skin.build(context,arm,p)
+        except RuntimeError as exc:
+            self.report({"WARNING"},str(exc))
+            return {"CANCELLED"}
+        rig.select(context,arm)
+        p.status=f"{obj.name}: {len(obj.data.vertices)} vertices, {len(obj.vertex_groups)} bone groups"
+        return {"FINISHED"}
+
 class CS_OT_preset_file(Operator):
     bl_idname="chimera_kit.preset_file"
     bl_label="Creature recipe"
@@ -623,6 +725,8 @@ class CS_OT_preset_file(Operator):
               "fingers","finger_links","mannequin_style","wings","antennae","ponytail","neck_length","neck_links","jaw","antenna_length","antenna_links",
               "tail_length","wing_span","wing_links","eyes","eye_size","chest_size","belly_size","hip_size",
               "eye_spacing","eye_height","eye_forward","front_legs","hind_legs",
+              "hand_size","foot_size","foot_length","foot_thickness","wing_angle","wing_height","curve","head_shape","arm_raise","chest_width","hip_width",
+              "skin_style","skin_base","skin_smooth","skin_thickness","skin_tpose","skin_pose","skin_taper","skin_limbs",
               "wing_style","wing_frequency","wing_fold","jaw_open","jaw_chance","jaw_rate","eye_bounce","body_wave","secondary","foot_roll",
               "motion_type","jump_height","jump_distance","jump_crouch","strike_side","strike_height","body_lean","fly_height",
               "gait","cycle_frames","cycles","start_frame","stride","lift","stance","foot_planting","exaggeration","body_height",
@@ -657,6 +761,10 @@ class CS_OT_preset_file(Operator):
                         elif prop.type not in {"STRING","ENUM"} and not isinstance(value,(int,float)):
                             raise ValueError("Expected a number for "+key)
                         setattr(p,key,value)
+                if "foot_size" in values and "foot_length" not in values:
+                    p.foot_length=p.foot_thickness=values["foot_size"]    # a recipe from before the split
+                if "skin_pose" not in values and values.get("skin_tpose") is False:
+                    p.skin_pose="KEEP"    # a recipe from before the Arms choice, with T-pose first off
         except (OSError,ValueError,TypeError) as exc:
             self.report({"ERROR"},str(exc))
             return {"CANCELLED"}
@@ -844,8 +952,8 @@ class CS_OT_retarget_map_file(Operator):
         return {"FINISHED"}
 
 CLASSES=(CS_OT_sync_settings,CS_OT_retarget_pick,CS_OT_retarget_automap,CS_OT_retarget_run,CS_OT_import_mixamo,CS_OT_retarget_map_file,
-         CS_OT_build,CS_OT_add_module,CS_OT_delete,CS_OT_validate,CS_OT_fit_start,CS_OT_fit_finish,
+         CS_OT_build,CS_OT_choose_preset,CS_OT_add_module,CS_OT_delete,CS_OT_validate,CS_OT_fit_start,CS_OT_fit_finish,
          CS_OT_generate_motion,CS_OT_push_clip,CS_OT_capture_pose,CS_OT_apply_pose,
-         CS_OT_clear_animation,CS_OT_export,CS_OT_report,CS_OT_pose_tools,CS_OT_bind,
+         CS_OT_clear_animation,CS_OT_export,CS_OT_report,CS_OT_pose_tools,CS_OT_bind,CS_OT_skin,
          CS_OT_preview,CS_OT_preset_file,CS_OT_animation_export,CS_OT_motion_style,
          CS_OT_load_motion,CS_OT_limb_controls,CS_OT_footprints,CS_OT_layer)

@@ -2,7 +2,7 @@
 
 bl_info = {
     "name": "Chimera Kit", "author": "Chimera Kit contributors",
-    "version": (1, 3, 0), "blender": (4, 2, 0), "category": "Rigging",
+    "version": (1, 7, 0), "blender": (4, 2, 0), "category": "Rigging",
     "location": "3D View > Sidebar > Chimera Kit",
     "description": "Build creature rigs, pose with IK, generate gaits and bind meshes",
 }
@@ -28,6 +28,8 @@ PRESETS = [
     ("GNOU", "Gnou", "Heavy quadruped"),
     ("GIRAFFE", "Giraffe", "Tall quadruped with a very long, many-jointed neck"),
     ("PANTHER", "Panther", "Low quadruped with a long tail"),
+    ("DOG", "Dog", "Pet dog: muzzle, hanging ears and a short tail that wags"),
+    ("CAT", "Cat", "Pet cat: round head, pointed ears, low body and a long tail"),
     ("DRAGON", "Dragon", "Quadruped with articulated wings"),
     ("LIZARD", "Lizard", "Long sprawling body with a whip tail"),
     ("GECKO", "Gecko", "Short sprawling body, big head, fat tail and wide toe pads"),
@@ -52,7 +54,7 @@ PRESETS = [
 ]
 GROUPS = [("Humanoids & primates", ("BIPED","HUMAN","APE","GORILLA","ALIEN","ANGEL","CENTAUR")),
           ("Mechs", ("MECH","MECH_TROOPER","MECH_FLYER","MECH_POD")),
-          ("Four legs", ("HORSE","GNOU","GIRAFFE","PANTHER","DRAGON")),
+          ("Four legs & pets", ("DOG","CAT","HORSE","GNOU","GIRAFFE","PANTHER","DRAGON")),
           ("Reptiles, amphibians & dinosaurs", ("LIZARD","GECKO","FROG","SNAKE","ALLOSAUR","TREX","BRONTO")),
           ("Birds", ("BIRD","EAGLE","OSTRICH","PENGUIN")),
           ("Swimmers", ("FISH","SHARK","DOLPHIN","WHALE","TADPOLE")),
@@ -73,6 +75,7 @@ def preset_changed(self, context):
         "HUMAN": (1, 2, 0, 1.0, 1.0), "APE": (1, 3, 0, 1.1, 0.7),
         "MECH": (1, 1, 0, 1.1, 1.0), "HORSE": (2, 4, 5, 1.35, 1.0),
         "GNOU": (2, 4, 1, 1.35, 1.0), "GORILLA": (2, 3, 0, 0.8, 0.95), "GIRAFFE": (2, 3, 3, 1.05, 1.55), "PANTHER": (2, 4, 9, 1.55, 0.8),
+        "DOG": (2, 4, 5, 1.2, 0.9), "CAT": (2, 4, 8, 1.25, 0.72),
         "LIZARD": (2, 6, 9, 1.5, 1.0), "GECKO": (2, 4, 4, 1.0, 1.0), "ALIEN": (1, 3, 0, 1.0, 1.05),
         "TREX": (1, 4, 10, 1.0, 1.0), "BRONTO": (2, 5, 14, 1.7, 1.0),
         "ALLOSAUR": (1, 4, 10, 1.0, 1.0), "CENTAUR": (2, 4, 5, 1.35, 1.0), "DRAGON": (2, 5, 9, 1.35, 1.0),
@@ -93,7 +96,7 @@ def preset_changed(self, context):
     self.neck_length = {"GIRAFFE":3.4,"BRONTO":5.0}.get(species,1.0)
     self.neck_links = {"GIRAFFE":5,"OSTRICH":3,"BRONTO":9}.get(species,1)
     # Animals with a mouth worth opening get a hinged jaw; beaks, visors and box heads do not.
-    self.jaw = species in {"APE","ALIEN","CENTAUR","HORSE","GNOU","GIRAFFE","PANTHER","DRAGON","LIZARD","GECKO",
+    self.jaw = species in {"APE","ALIEN","CENTAUR","HORSE","GNOU","GIRAFFE","PANTHER","DOG","CAT","DRAGON","LIZARD","GECKO",
                            "ALLOSAUR","TREX","BRONTO","FISH","SHARK","WHALE","FROG"}
     self.antenna_length, self.antenna_links = 1.0, 3
     self.tail_length, self.wing_span, self.wing_links = 1.0, 1.0, 2
@@ -101,11 +104,21 @@ def preset_changed(self, context):
     self.eye_spacing, self.eye_height, self.eye_forward = 0.48, 0.0, 0.45
     # Front and hind leg heights: a gorilla and a giraffe stand taller in front.
     self.front_legs, self.hind_legs = {"GORILLA":(1.22,0.80),"GIRAFFE":(1.10,0.92)}.get(species,(1.0,1.0))
+    self.hand_size = 1.0
+    self.foot_size = self.foot_length = self.foot_thickness = {"CAT":0.8}.get(species,1.0)
+    self.wing_angle, self.wing_height = 0.0, 0.0
+    self.chest_width, self.hip_width = 1.0, 1.0
+    self.curve = 1.0
+    # People get a head with a chin and a rounded skull; everything else keeps its own shape.
+    self.head_shape = 1.0 if species in {"BIPED","HUMAN","APE","ANGEL","CENTAUR"} else 0.0
     # Trunk profile: animals carry a deep chest, a tucked waist and solid hips.
-    animals = {"HORSE","GNOU","GIRAFFE","PANTHER","DRAGON","CENTAUR","LIZARD","GECKO","ALLOSAUR","TREX","BRONTO",
+    animals = {"HORSE","GNOU","GIRAFFE","PANTHER","DOG","CAT","DRAGON","CENTAUR","LIZARD","GECKO","ALLOSAUR","TREX","BRONTO",
                "BIRD","EAGLE","OSTRICH"}
     people = {"HUMAN","APE","ALIEN","ANGEL","BIPED"}
-    self.chest_size, self.belly_size, self.hip_size = ((1.5,1.15,0.9) if species=="GORILLA" else (1.15,0.85,1.08) if species in animals else
+    # Horses carry a barrel: the belly as deep as the chest, not tucked up like a dog's.
+    barrels = {"HORSE","GNOU","CENTAUR"}
+    self.chest_size, self.belly_size, self.hip_size = ((1.5,1.15,0.9) if species=="GORILLA" else (1.1,1.12,1.04) if species in barrels else
+        (1.15,0.85,1.08) if species in animals else
         (1.08,0.92,1.0) if species in people else (1.0,1.0,1.0))
     self.wings = species in {"DRAGON","ANGEL","BIRD","EAGLE","OSTRICH","MECH_FLYER"}
     self.antennae = species=="ALIEN"
@@ -114,7 +127,7 @@ def preset_changed(self, context):
     # Motion defaults that suit the body plan. Sprawling reptiles walk on
     # diagonal pairs with a strongly bending spine; fish beat the tail side
     # to side; cetaceans beat it up and down.
-    tuned = dict(gait="WALK", spine_bend=0.10, tail_swing=0.20, body_height=-0.08, spine_flex=0.05,
+    tuned = dict(gait="WALK", tail_frequency=1, tail_stiffness=0.25, spine_bend=0.10, tail_swing=0.20, body_height=-0.08, spine_flex=0.05,
                   tail_lift=0.0, spine_twist=0.10, body_twist=0.06, sway=0.025, head_bob=0.04,
                   arm_swing=0.22, wing_flap=0.45, wing_style="FLAP", wing_frequency=1.0, wing_fold=0.0,
                   body_roll=0.015, body_wave=0.0, bounce=0.025)
@@ -128,6 +141,11 @@ def preset_changed(self, context):
         # An inchworm arches its back in a wave instead of bending sideways.
         tuned.update(bounce=0.0, spine_bend=0.06, spine_flex=0.9, body_wave=0.0, tail_swing=0.03, tail_lift=0.0, tail_stiffness=0.0,
                      body_height=0.0, spine_twist=0.0, body_twist=0.0, sway=0.0, head_bob=0.0, body_roll=0.0)
+    elif species=="DOG":
+        # A happy dog: quick, wide tail wags.
+        tuned.update(tail_swing=0.6, tail_frequency=2, tail_stiffness=0.1, head_bob=0.07, spine_flex=0.06)
+    elif species=="CAT":
+        tuned.update(tail_swing=0.14, tail_stiffness=0.05, head_bob=0.03, spine_flex=0.08, spine_bend=0.14, body_height=-0.10)
     elif species=="FROG":
         tuned.update(gait="BOUND", spine_bend=0.08, body_height=-0.02, spine_flex=0.12)
     elif species in {"FISH","SHARK","TADPOLE"}:
@@ -147,7 +165,8 @@ def preset_changed(self, context):
         setattr(self, key, value)
 
 def rig_filter(self, obj):
-    return obj.type == "ARMATURE" and bool(obj.get("cs_rig"))
+    # Only creatures in this scene: one deleted from the scene drops out of the list.
+    return obj.type == "ARMATURE" and bool(obj.get("cs_rig")) and rig.in_scene(obj)
 
 class CSLayerSettings(bpy.types.PropertyGroup):
     strip_name: StringProperty()
@@ -295,6 +314,52 @@ class CSSettings(bpy.types.PropertyGroup):
         description="0 sits on top of the head. Higher raises the stalks; below 0 slides the eyes down the sides of the head")
     eye_forward: FloatProperty(name="Eye forward", default=0.45, min=-1, max=1.5,
         description="0 is the middle of the head, 1 is its front edge")
+    chest_width: FloatProperty(name="Chest width", default=1.0, min=0.3, max=5, soft_max=2.5,
+        description="Side-to-side width of the chest and shoulders. The arms or front legs move out with it")
+    hip_width: FloatProperty(name="Hip width", default=1.0, min=0.3, max=5, soft_max=2.5,
+        description="Side-to-side width of the pelvis. The legs move out with it")
+    hand_size: FloatProperty(name="Hand size", default=1.0, min=0.2, max=10, soft_max=4,
+        description="Hands and fingers, scaled from the wrist")
+    foot_size: FloatProperty(name="Foot size", default=1.0, min=0.2, max=10, soft_max=4,
+        description="Older setting, kept so earlier recipes load: sets Foot length and Foot thickness together")
+    foot_length: FloatProperty(name="Foot length", default=1.0, min=0.2, max=10, soft_max=4,
+        description="How long the feet and toes are, heel to tip. Width and height stay")
+    foot_thickness: FloatProperty(name="Foot thickness", default=1.0, min=0.2, max=10, soft_max=4,
+        description="How thick the feet and toes are, side to side and top to bottom. A flat foot's ankle rises with it")
+    wing_angle: FloatProperty(name="Wing angle", default=0.0, min=-1.3, max=1.5, subtype="ANGLE",
+        description="Tilt the wings up from the shoulder, so large wings clear the floor; negative droops them")
+    wing_height: FloatProperty(name="Wing height", default=0.0, min=-2, max=4, soft_min=-1, soft_max=2,
+        description="Where the wings join the body: 0 is the shoulder, higher moves them up onto the back")
+    curve: FloatProperty(name="Natural curve", default=1.0, min=-3, max=5, soft_min=0, soft_max=3,
+        description="The resting S-curve of the spine, neck and tail. 0 is perfectly straight")
+    head_shape: FloatProperty(name="Head shape", default=1.0, min=0, max=1.5, subtype="FACTOR",
+        description="0 is a plain block; 1 is a human head with a chin, a wide cranium and a rounded back")
+    arm_raise: FloatProperty(name="Arm rest pose", default=0.0, min=0, max=1, subtype="FACTOR",
+        description="0 rests the arms relaxed at the sides, 1 in a T-pose. Cycles still swing the arms at the sides")
+    skin_style: EnumProperty(name="Mesh style", items=[
+        ("AUTO","Automatic","One smooth skin for creatures, separate hard parts for mechs"),
+        ("ORGANIC","One skin","A single connected mesh with edge loops at every joint"),
+        ("JOINTED","Hard parts","A separate rigid block for every bone, for robots and armour")], default="AUTO")
+    skin_base: EnumProperty(name="Base model", default="PROCEDURAL",
+        items=[("PROCEDURAL","Procedural","Built from the skeleton's own sections, for any creature"),
+               ("LOW","01 Low","Human template, 741 vertices (MakeHuman proxy, CC0), fitted to the skeleton. Two-legged creatures with arms"),
+               ("BASE","02 Base","Human template, 1,591 vertices (MakeHuman proxy, CC0), fitted to the skeleton. Two-legged creatures with arms")],
+        description="Where the mesh comes from. The human templates fit upright, two-legged creatures with arms; others are built procedurally")
+    skin_smooth: IntProperty(name="Smoothing", default=1, min=0, max=3,
+        description="Subdivision levels on the built mesh. 0 shows the bare cage")
+    skin_thickness: FloatProperty(name="Thickness", default=1.0, min=0.3, max=3.0,
+        description="Overall girth of the built mesh relative to the mannequin")
+    skin_taper: FloatProperty(name="Muscle taper", default=1.0, min=0.0, max=2.5,
+        description="How much each limb swells at the muscle and narrows at the joint. 0 is a plain straight taper")
+    skin_limbs: FloatProperty(name="Limb thickness", default=1.0, min=0.3, max=3.0,
+        description="Thickness of the arms and legs of the built mesh, without changing the trunk")
+    skin_pose: EnumProperty(name="Arms", default="A",
+        items=[("A","A-pose","Set the arm rest to 45 degrees out before building. The shoulder then bends least whether the arms go up or down, so it deforms best in animation"),
+               ("T","T-pose","Raise the arm rest to a T before building, level with the shoulders"),
+               ("KEEP","As built","Keep the arm rest the skeleton has. Arms hanging at the sides are still meshed in an A-pose and lowered")],
+        description="Arm rest pose the mesh is built and skinned in")
+    skin_tpose: BoolProperty(name="T-pose first", default=True,
+        description="Older setting, kept so earlier recipes load: off means Arms is As built")
     front_legs: FloatProperty(name="Front legs", default=1.0, min=0.2, max=5, soft_max=2.5,
         description="Height of the front legs and shoulders relative to the preset")
     hind_legs: FloatProperty(name="Hind legs", default=1.0, min=0.2, max=5, soft_max=2.5,
@@ -374,7 +439,17 @@ class CSSettings(bpy.types.PropertyGroup):
 
 CLASSES = (CSLayerSettings,CSRetargetItem,CSSettings) + operators.CLASSES + ui.CLASSES
 
+@bpy.app.handlers.persistent
+def forget_deleted(scene, depsgraph=None):
+    """A creature deleted from the scene (X in the viewport or Outliner) is let go by
+    the chooser too, so it can be freed instead of lingering in the list."""
+    p = getattr(scene, "cs_settings", None)
+    if p and p.active_rig and not rig.in_scene(p.active_rig, scene):
+        p.active_rig = None
+
 def register():
+    if forget_deleted not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(forget_deleted)
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.cs_settings = PointerProperty(type=CSSettings)
@@ -382,6 +457,8 @@ def register():
     motion.live_start()
 
 def unregister():
+    if forget_deleted in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(forget_deleted)
     motion.live_stop()
     if hasattr(bpy.types.Object,"cs_layers"):
         del bpy.types.Object.cs_layers

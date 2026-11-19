@@ -2,7 +2,7 @@
 
     blender --background --factory-startup --python scripts/render_showcase.py -- <job> <output folder>
 
-Jobs: hero, walk, action, wings, fly, crawl, morph. Still frames are written as PNG;
+Jobs: hero, walk, action, wings, fly, crawl, morph, four (mannequins); mesh and look (mesh studies, not in the README). Still frames are written as PNG;
 turn a numbered sequence into a GIF or MP4 with ffmpeg.
 """
 import math
@@ -101,8 +101,12 @@ def lights(center,spread):
     light("Fill",(center[0]+spread*.9,-spread*.6,spread*.35),center,spread*spread*5,spread*.9,(.80,.88,1))
     light("Rim",(center[0]+spread*.2,spread*.8,spread*.8),center,spread*spread*11,spread*.5,(.85,.92,1))
 
-def creature(species,x,y=0.0,turn=35,z=0.0,**options):
-    """Build one preset, apply options, give it a cycle and place it."""
+WIRES=False
+
+def creature(species,x,y=0.0,turn=35,z=0.0,mesh=False,still=False,**options):
+    """Build one preset, apply options, give it a cycle and place it.
+    mesh: show the mesh built from its skeleton instead of the mannequin.
+    still: leave it in its rest pose."""
     p.species=species
     p.size=1.8
     p.motion_type="WALK"
@@ -111,13 +115,27 @@ def creature(species,x,y=0.0,turn=35,z=0.0,**options):
         setattr(p,key,value)
     p.show_rig=False
     arm=rig.build(bpy.context,p)
-    motion.generate(bpy.context,arm,p)
+    if not still:
+        motion.generate(bpy.context,arm,p)
+    if mesh:
+        from chimera_kit import skin
+        built=skin.build(bpy.context,arm,p)
+        if WIRES:
+            # Show the edge flow: a dark wire copy riding on the mesh.
+            wire=built.copy()
+            wire.data=built.data.copy()
+            arm.users_collection[0].objects.link(wire)
+            wire.modifiers.new("Wire","WIREFRAME").thickness=p.size*.0035
+            ink=bpy.data.materials.get("Ink") or bpy.data.materials.new("Ink")
+            ink.diffuse_color=(.02,.02,.02,1)
+            wire.data.materials.clear()
+            wire.data.materials.append(ink)
     arm.location=(x,y,z)
     arm.rotation_euler[2]=math.radians(turn)
     # Controls and bones are for animators, not for the picture.
     arm.hide_render=True
     for obj in arm.users_collection[0].all_objects:
-        if obj.type!="MESH" or not obj.get("cs_preview"):
+        if obj.type!="MESH" or not obj.get("cs_skin" if mesh else "cs_preview"):
             obj.hide_render=True
     return arm
 
@@ -147,6 +165,8 @@ if job=="hero":
           ("CENTAUR",4.6,{}),("ALLOSAUR",7.6,dict(jaw_chance=1.0))]
     for species,x,options in back:
         creature(species,x,3.4,40,**options)
+    creature("DOG",-.1,.6,40)
+    creature("CAT",3.0,.9,40)
     creature("SNAKE",-.2,-5.6,75)
     creature("SHARK",-5.2,6.5,55,z=2.9)
     creature("DOLPHIN",5.4,6.5,50,z=3.0)
@@ -187,6 +207,52 @@ elif job=="wings":
     lights((0,0,1),7)
     camera((0,-21,3.4),(0,0,1.3),lens=60)
     frames(32,"wings")
+elif job=="look":
+    # Development: python render_showcase.py -- look out "SPECIES,mesh,still,turn;..." [key=value ...]
+    stage(16)
+    quality(1400,500,12)
+    items=args[2].split(";")
+    options={k:eval(v) for k,v in (a.split("=") for a in args[3:])}
+    WIRES=bool(options.pop("wires",False))
+    close=options.pop("close",None)
+    for i,item in enumerate(items):
+        parts=item.split(",")
+        x=(i-(len(items)-1)/2)*(11.0/max(1,len(items)-1) if len(items)>4 else 2.2) if len(items)>1 else 0
+        creature(parts[0],x,0,float(parts[3]) if len(parts)>3 else 35,mesh=parts[1]=="1",still=parts[2]=="1",**options)
+    lights((0,0,1.0),7)
+    if close:
+        camera((close[0],-9,close[1]+(close[3] if len(close)>3 else 1.2)),(close[0],0,close[1]),lens=close[2])
+    else:
+        camera((0,-20,2.6),(0,0,1.0),lens=62 if len(items)>4 else 105)
+    scene.frame_set(5)
+    scene.render.filepath=str(out/"look.png")
+    bpy.ops.render.render(write_still=True)
+elif job=="mesh":
+    # Build mesh from skeleton: the box figure in its T-pose, then meshes built from skeletons.
+    stage(24,depth=44)
+    quality(1600,520,int(args[2]) if len(args)>2 else 24)
+    creature("BIPED",-6.0,0,25,still=True,arm_raise=1.0)
+    creature("BIPED",-4.1,0,25,mesh=True,still=True,arm_raise=1.0)
+    creature("DOG",-2.0,0,60,mesh=True,still=True)
+    creature("CAT",-.2,-.6,60,mesh=True,still=True)
+    creature("HORSE",1.9,.6,60,mesh=True,still=True)
+    creature("DRAGON",4.2,.9,50,mesh=True,still=True,wing_angle=.5,wing_links=3)
+    creature("MECH_TROOPER",6.2,-.4,25,mesh=True,still=True,arm_raise=1.0)
+    p.arm_raise,p.wing_angle=0.0,0.0
+    lights((0,0,1.0),8)
+    camera((0,-27,2.8),(0,0,1.0),lens=62)
+    scene.frame_set(1)
+    scene.render.filepath=str(out/"mesh.png")
+    bpy.ops.render.render(write_still=True)
+elif job=="four":
+    # Four-legged walkers: dog, cat, panther, gnou, gorilla and centaur.
+    stage(16)
+    quality(1200,380,20)
+    for species,x,y in (("DOG",-5.2,0),("CAT",-3.3,0),("PANTHER",-1.2,.2),("GNOU",1.3,.5),("GORILLA",3.5,0),("CENTAUR",5.6,.4)):
+        creature(species,x,y,55)
+    lights((0,0,.9),7)
+    camera((0,-21,3.4),(0,0,1.1),lens=56)
+    frames(int(args[2]) if len(args)>2 else 32,"four")
 elif job=="fly":
     # The Fly cycle: legs tucked, body riding the beat. Glide in Wings makes it soar.
     stage(16)

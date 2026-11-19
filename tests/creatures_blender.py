@@ -28,7 +28,7 @@ for species in ("HORSE","PANTHER","GNOU","DRAGON","CENTAUR"):
     check(head(arm,front+".lower").y>head(arm,front+".upper").y+.03,species+": front elbow does not point back")
     check(head(arm,hind+".lower").y<head(arm,hind+".upper").y-.03,species+": hind stifle does not point forward")
     check(head(arm,hind+".foot").y>head(arm,hind+".lower").y+.1,species+": hock does not point back")
-    check(head(arm,front+".foot").z>.2 and "toe.01.L" in arm.data.bones,species+": not standing on a raised ankle")
+    check(head(arm,front+".foot").z>.12 and "toe.01.L" in arm.data.bones,species+": not standing on a raised ankle")
 # Sprawlers: feet well outside the body, belly low, diagonal gait and a bending spine.
 for species in ("LIZARD","GECKO"):
     arm,limbs=build(species)

@@ -4,13 +4,12 @@ import json
 import sys
 import math
 import bpy
-from mathutils import Vector
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 import chimera_kit as cs
 from chimera_kit import rig, motion
 cs.register()
-assert len(cs.PRESETS)==36,"Creature library changed without an audited implementation"
+assert len(cs.PRESETS)==38,"Creature library changed without an audited implementation"
 p=bpy.context.scene.cs_settings
 p.species="HORSE"
 p.travel=True
