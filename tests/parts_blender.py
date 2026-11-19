@@ -1,6 +1,5 @@
 """Run with Blender --background --factory-startup --python-exit-code 1 --python tests/parts_blender.py."""
 import json
-import math
 from pathlib import Path
 import sys
 import bpy

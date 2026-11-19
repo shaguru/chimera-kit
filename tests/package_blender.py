@@ -14,7 +14,9 @@ addon_utils.enable("chimera_kit",default_set=False,persistent=True)
 import chimera_kit as cs
 assert Path(cs.__file__).resolve().is_relative_to(dest.resolve())
 assert hasattr(bpy.types.Scene,"cs_settings")
-assert cs.bl_info["version"]==(1,3,0)
+assert cs.bl_info["version"]==(1,7,0)
+from chimera_kit import template
+assert set(template.data()["levels"])=={"LOW","BASE"},"the human templates should ship in the zip"
 bpy.ops.wm.open_mainfile(filepath=str(ROOT/"Character_Studio_Demo.blend"))
 arm=next(o for o in bpy.context.scene.objects if o.get("cs_rig"))
 assert arm["cs_species"]=="DRAGON"

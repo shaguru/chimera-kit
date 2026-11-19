@@ -1,6 +1,6 @@
 """Independent, parameter-driven anatomy. Coordinates: Z up, -Y forward."""
 from dataclasses import dataclass, field
-from math import sin, pi
+from math import sin, cos, pi, atan2
 
 @dataclass
 class Blueprint:
@@ -14,7 +14,7 @@ class Blueprint:
         """box=(width0, depth0, width1, depth1): cross-section at head and tail
         for the box mannequin. Width runs side to side, depth front to back."""
         self.bones.append(dict(name=name, head=head, tail=tail, parent=parent,
-                               deform=deform, radius=radius, group=group, box=box))
+                               deform=deform, radius=radius, group=group, box=box, side=None))
         return name
 
     def form(self, bone, center, scale, color=0, ball=None):
@@ -469,10 +469,11 @@ def accessories(b,p):
         point=bones[anchor]["tail"]
         upright=bones[anchor]["tail"][2]-bones[anchor]["head"][2]>abs(bones[anchor]["tail"][1]-bones[anchor]["head"][1])
         ay=point[1]+(h*.04 if upright else h*.10)
-        az=point[2]-(h*.04 if upright else 0)+h*.03
+        az=point[2]-(h*.04 if upright else 0)+h*.03+h*.15*p.wing_height
         k=h*{"OSTRICH":.42,"BIRD":.6,"EAGLE":1.15,"MECH_FLYER":.85}.get(p.species,1.0)*p.wing_span
         count=max(2,p.wing_links)
         for side,sign in (("L",1),("R",-1)):
+            first=len(b.bones)
             root=(sign*h*.05,ay,az)
             elbow=(sign*k*.40,ay+k*.10,az+k*.22)
             tip=(sign*k*.78,ay+k*.28,az+k*.10)
@@ -502,6 +503,11 @@ def accessories(b,p):
                 if count>2:
                     end=(last[0]+(tip[0]-last[0])*i*.45,end[1],end[2])
                 b.bone(f"wingfinger.{i+1}.{side}",last,end,"wingtip."+side,radius=h*.01,group="Wings")
+            if abs(p.wing_angle)>1e-6:
+                # Tilt the whole wing about its root: up for wings carried high, down to droop.
+                for spec in b.bones[first:]:
+                    for key in ("head","tail"):
+                        spec[key]=turn_y(spec[key],root,-sign*p.wing_angle)
     if p.eyes and head:
         # Cartoon eyes: a ball on a short stalk above the head, free to bounce.
         size=h*.04*p.eye_size
@@ -524,7 +530,311 @@ def accessories(b,p):
             b.form(f"eye.01.{side}",top,(size,size,size),0,ball="eye_white")
             b.form(f"eye.01.{side}",(top[0],top[1]-size*.72,top[2]),(size*.5,size*.42,size*.5),0,ball="eye_pupil")
 
+def turn_y(point,pivot,angle):
+    """Rotate a point about the front-to-back axis through pivot."""
+    x,z=point[0]-pivot[0],point[2]-pivot[2]
+    c,s_=cos(angle),sin(angle)
+    return (pivot[0]+x*c+z*s_,point[1],pivot[2]-x*s_+z*c)
+
+def family(b,root):
+    """A bone and everything below it. Bones are listed parents first."""
+    names={root}
+    for spec in b.bones:
+        if spec["parent"] in names:
+            names.add(spec["name"])
+    return names
+
+def resize(b,names,pivot,flat,tall):
+    """Scale bones and their forms about pivot: flat along the ground, tall in height."""
+    def move(point):
+        return (pivot[0]+(point[0]-pivot[0])*flat,pivot[1]+(point[1]-pivot[1])*flat,pivot[2]+(point[2]-pivot[2])*tall)
+    for spec in b.bones:
+        if spec["name"] in names:
+            spec["head"],spec["tail"]=move(spec["head"]),move(spec["tail"])
+            if spec.get("box"):
+                w0,d0,w1,d1=spec["box"]
+                spec["box"]=(w0*flat,d0*tall,w1*flat,d1*tall)
+            spec["radius"]=spec["radius"]*(flat*tall)**.5
+    for form in b.forms:
+        if form["bone"] in names:
+            form["center"]=move(form["center"])
+            sx,sy,sz=form["scale"]
+            form["scale"]=(sx*flat,sy*flat,sz*tall)
+
+def extremities(b,p):
+    """Hand size and foot size. A flat foot grows up from the floor, so the
+    ankle rises with it; a foot that stands on its toes grows only its toes."""
+    bones={spec["name"]:spec for spec in b.bones}
+    f=p.hand_size
+    if abs(f-1)>1e-6:
+        for side in ("L","R"):
+            hand=bones.get("hand."+side)
+            if hand:
+                resize(b,family(b,hand["name"]),hand["head"],f,f)
+    length=getattr(p,"foot_length",1.0)
+    thick=getattr(p,"foot_thickness",1.0)
+    if abs(length-1)>1e-6 or abs(thick-1)>1e-6:
+        for limb in b.limbs:
+            foot=bones[limb["foot"]]
+            ankle,end=foot["head"],foot["tail"]
+            run=((end[0]-ankle[0])**2+(end[1]-ankle[1])**2)**.5
+            toes=family(b,foot["name"])-{foot["name"]}
+            control=bones[limb["control"]]
+            plantigrade=ankle[2]-end[2]<=run
+            if plantigrade:
+                # Flat foot. Thickness: the foot grows up from the floor, so the ankle
+                # rises with it (never past most of the way to the knee), and it widens.
+                knee=bones[limb["lower"]]["head"]
+                tall=min(thick,knee[2]*.7/max(ankle[2],1e-6))
+                resize(b,toes|{foot["name"],control["name"]},(ankle[0],ankle[1],0),1.0,tall)   # heights and depths
+                thicken(b,toes|{foot["name"]},thick,1.0)                                       # widths
+                # Length: heel to toe tip, stretched forward from under the ankle.
+                pivot=(ankle[0],ankle[1],0)
+                lengthen(b,toes|{foot["name"],control["name"]},pivot,(end[0]-ankle[0],end[1]-ankle[1]),length,foot["name"])
+                bones[limb["lower"]]["tail"]=foot["head"]
+                limb["ankle"]=foot["head"]
+            else:
+                # On its toes: the toes alone grow, from where they meet the floor.
+                pivot=(end[0],end[1],0)
+                tip=[spec for spec in b.bones if spec["name"] in toes]
+                reach=(tip[-1]["tail"][0]-end[0],tip[-1]["tail"][1]-end[1]) if tip else (0,-1)
+                lengthen(b,toes,pivot,reach,length)
+                resize(b,toes,pivot,1.0,thick)      # heights and depths
+                thicken(b,toes,thick,1.0)           # widths
+                ground=(end[0],end[1],end[2]*thick)
+                foot["tail"]=ground
+                control["tail"]=ground
+            hip=bones[limb["upper"]]["head"]
+            limb["reach"]=sum((hip[j]-limb["ankle"][j])**2 for j in range(3))**.5
+
+def lengthen(b,names,pivot,direction,f,keep_head=None):
+    """Stretch bones and their forms along a direction on the ground, from pivot.
+    keep_head: a bone whose head stays put (the ankle above the heel)."""
+    n=(direction[0]**2+direction[1]**2)**.5
+    if n<1e-9 or abs(f-1)<1e-6:
+        return
+    dx,dy=direction[0]/n,direction[1]/n
+    def move(point):
+        along=(point[0]-pivot[0])*dx+(point[1]-pivot[1])*dy
+        if along<=0:
+            return point    # the heel stays where it is
+        return (point[0]+dx*along*(f-1),point[1]+dy*along*(f-1),point[2])
+    for spec in b.bones:
+        if spec["name"] in names:
+            if spec["name"]!=keep_head:
+                spec["head"]=move(spec["head"])
+            spec["tail"]=move(spec["tail"])
+    for form in b.forms:
+        if form["bone"] in names:
+            form["center"]=move(form["center"])
+            sx,sy,sz=form["scale"]
+            form["scale"]=(sx*(1+(f-1)*abs(dx)),sy*(1+(f-1)*abs(dy)),sz)
+
+def thicken(b,names,wide,tall):
+    """Cross-sections of bones and their forms: wide side to side, tall top to bottom."""
+    for spec in b.bones:
+        if spec["name"] in names:
+            if spec.get("box"):
+                w0,d0,w1,d1=spec["box"]
+                spec["box"]=(w0*wide,d0*tall,w1*wide,d1*tall)
+            spec["radius"]=spec["radius"]*(wide*tall)**.5
+    for form in b.forms:
+        if form["bone"] in names and not form.get("ball"):
+            sx,sy,sz=form["scale"]
+            form["scale"]=(sx*wide,sy,sz*tall)
+
+def raise_arms(b,p):
+    """Arm rest pose: 0 leaves the arms relaxed, 1 lifts them to a T-pose.
+    b.arm_drop records how far each upper arm must turn to hang relaxed again."""
+    b.arm_drop={}
+    if p.arm_raise<1e-6 or b.species in THEROPODS:
+        return
+    bones={spec["name"]:spec for spec in b.bones}
+    for side,sign in (("L",1),("R",-1)):
+        upper=bones.get("arm."+side)
+        fore=bones.get("forearm."+side)
+        if not upper or not fore:
+            continue
+        shoulder=upper["head"]
+        dx,dz=(fore["tail"][0]-shoulder[0])*sign,fore["tail"][2]-shoulder[2]
+        out=atan2(dx,-dz)              # 0 hangs straight down, 90 degrees is level
+        lift=max(0.0,(pi*.5-out))*min(1.0,p.arm_raise)
+        names=family(b,upper["name"])
+        for spec in b.bones:
+            if spec["name"] in names:
+                spec["head"]=turn_y(spec["head"],shoulder,-sign*lift)
+                spec["tail"]=turn_y(spec["tail"],shoulder,-sign*lift)
+                spec["side"]=turn_y((1,0,0),(0,0,0),-sign*lift)
+        for form in b.forms:
+            if form["bone"] in names:
+                form["center"]=turn_y(form["center"],shoulder,-sign*lift)
+        b.arm_drop[upper["name"]]=sign*lift
+
+def curve(b,p):
+    """The natural curves of a backbone: an S through the trunk, a bow in the
+    neck, a sag and lift in the tail. Chain ends stay where they are, so
+    everything attached to them is undisturbed."""
+    amount=p.curve
+    if abs(amount)<1e-6:
+        return
+    bones={spec["name"]:spec for spec in b.bones}
+    def ordered(prefix,first=None):
+        found=[spec for spec in b.bones if spec["name"].startswith(prefix) and spec["name"][len(prefix):len(prefix)+2].isdigit()]
+        found.sort(key=lambda spec:int(spec["name"][len(prefix):len(prefix)+2]))
+        return ([bones[first]] if first in bones else [])+found
+    def bend(chain,offset,free_end=False):
+        """offset(u, length, direction) -> displacement of the joint at u along the chain."""
+        n=len(chain)
+        if n<2:
+            return
+        start,end=chain[0]["head"],chain[-1]["tail"]
+        length=sum(sum((spec["tail"][j]-spec["head"][j])**2 for j in range(3))**.5 for spec in chain)
+        direction=tuple((end[j]-start[j])/max(length,1e-9) for j in range(3))
+        moved={}
+        names={spec["name"] for spec in chain}
+        shift={}
+        for i in range(1,n+1 if free_end else n):
+            old=chain[i-1]["tail"]
+            d=offset(i/n,length,direction)
+            d=(0,d[0],d[1])
+            if free_end:
+                floor=min(old[2],chain[i-1]["radius"]*1.2)
+                d=(0,d[1],max(old[2]+d[2],floor)-old[2])
+            moved[old]=d
+            if i<n: moved[chain[i]["head"]]=d
+        for spec in b.bones:
+            total=[0,0,0]
+            for key in ("head","tail"):
+                d=moved.get(spec[key])
+                if d:
+                    spec[key]=tuple(spec[key][j]+d[j] for j in range(3))
+                    total=[total[j]+d[j]*.5 for j in range(3)]
+            if spec["name"] in names and any(total):
+                shift[spec["name"]]=total
+        for form in b.forms:
+            d=shift.get(form["bone"])
+            if d:
+                form["center"]=tuple(form["center"][j]+d[j] for j in range(3))
+    crawler=b.species in SWIMMERS or b.species in {"SPIDER","CRAB","CENTIPEDE"}
+    def trunk(u,length,direction):
+        if abs(direction[2])>abs(direction[1]):
+            # Upright: hollow in the lower back, rounded between the shoulders.
+            return (-sin(2*pi*u)*.045*length*amount,0)
+        if b.species in {"HORSE","GNOU","CENTAUR"}:
+            # A barrel-bodied horse carries a level back from croup to withers; an S here
+            # rides the croup up and drops the chest, so the belly seems to arc up.
+            return (0,0)
+        # Level: the croup rides high and the back dips behind the shoulders.
+        return (0,sin(2*pi*u)*.03*length*amount)
+    def neck(u,length,direction):
+        if abs(direction[2])>abs(direction[1])*3:
+            return (-sin(pi*u)*.07*length*amount,0)
+        # A carried neck is an S: forward at the base, arched at the top.
+        mag=(direction[1]**2+direction[2]**2)**.5 or 1
+        return (-direction[2]/mag*sin(2*pi*u)*.06*length*amount,direction[1]/mag*sin(2*pi*u)*.06*length*amount)
+    def tail(u,length,direction):
+        return (0,(-sin(pi*u)*.07+u*u*.09)*length*amount)
+    if not crawler:
+        bend(ordered("spine."),trunk)
+        bend(ordered("torso."),trunk)
+    if b.species not in THEROPODS and not crawler:
+        bend(ordered("neck.",first="neck"),neck)
+    fan=THEROPODS.get(b.species,{}).get("fan")
+    if not crawler and not fan:
+        bend(ordered("tail."),tail,free_end=True)
+
+def widths(b,p):
+    """Chest width and hip width: side-to-side only. The trunk widens or
+    narrows between the two, and the limbs move out or in with it."""
+    chest,hips=p.chest_width,p.hip_width
+    if abs(chest-1)<1e-6 and abs(hips-1)<1e-6:
+        return
+    bones={spec["name"]:spec for spec in b.bones}
+    trunk=[spec for spec in b.bones if spec["name"].startswith("spine.")]
+    trunk.sort(key=lambda spec:spec["name"])
+    upper=[spec for spec in b.bones if spec["name"].startswith("torso.")]
+    upper.sort(key=lambda spec:spec["name"])
+    count=max(1,len(trunk))
+    factor={"pelvis":(hips,hips)}
+    for i,spec in enumerate(trunk):
+        factor[spec["name"]]=(hips+(chest-hips)*i/count,hips+(chest-hips)*(i+1)/count)
+    for spec in upper:
+        factor[spec["name"]]=(chest,chest)
+    for name,(f0,f1) in factor.items():
+        spec=bones.get(name)
+        if not spec: continue
+        if spec.get("box"):
+            w0,d0,w1,d1=spec["box"]
+            spec["box"]=(w0*f0,d0,w1*f1,d1)
+        for form in b.forms:
+            if form["bone"]==name and not form.get("ball"):
+                sx,sy,sz=form["scale"]
+                mid=(f0+f1)*.5
+                form["scale"]=(sx*mid,sy,sz)
+                form["center"]=(form["center"][0]*mid,form["center"][1],form["center"][2])
+    # Limbs hang from the hips or the chest: slide each whole limb sideways with its root.
+    control={limb["upper"]:limb for limb in b.limbs}
+    for spec in list(b.bones):
+        name=spec["name"]
+        parent=spec["parent"]
+        root=name.endswith(".upper") or name.startswith(("clavicle.","arm."))
+        if not root or parent not in factor or name.startswith("arm.") and parent.startswith("clavicle"):
+            continue
+        f=factor[parent][1] if parent!="pelvis" else hips
+        if name.startswith("clavicle."):
+            # The collarbone stretches: its inner end stays on the chest.
+            delta=(spec["tail"][0]-spec["head"][0])*(f-1)
+            names=family(b,name)-{name}
+            spec["tail"]=(spec["tail"][0]+delta,spec["tail"][1],spec["tail"][2])
+        else:
+            delta=spec["head"][0]*(f-1)
+            names=family(b,name)
+            limb=control.get(name)
+            if limb:
+                names|={limb["control"],limb["pole"]}
+                for key in ("ankle","knee"):
+                    limb[key]=(limb[key][0]+delta,limb[key][1],limb[key][2])
+        for other in b.bones:
+            if other["name"] in names:
+                for key in ("head","tail"):
+                    other[key]=(other[key][0]+delta,other[key][1],other[key][2])
+        for form in b.forms:
+            if form["bone"] in names or (form["bone"]==name):
+                form["center"]=(form["center"][0]+delta,form["center"][1],form["center"][2])
+
+SKULLS={"BIPED","HUMAN","APE","ANGEL","CENTAUR"}
+
+def skull(b,p):
+    """A head with a chin, a wide cranium and a rounded back, instead of a plain block."""
+    if b.species not in SKULLS or p.head_shape<1e-6:
+        return
+    bones={spec["name"]:spec for spec in b.bones}
+    head=bones.get("head")
+    if not head:
+        return
+    if head.get("box"):
+        w=max(head["box"][0],head["box"][2])
+        d=max(head["box"][1],head["box"][3])
+        tall=head["tail"][2]-head["head"][2]
+        center=(head["head"][0],head["head"][1],head["head"][2]+tall*.5)
+        head["box"]=None
+        head["radius"]=0
+        b.form("head",center,(w*.56,d*.56,tall*.5))
+        b.forms[-1]["skull"]=p.head_shape
+        return
+    for form in b.forms:
+        if form["bone"]=="head" and form["color"]==0 and not form.get("ball"):
+            form["skull"]=p.head_shape
+            return
+
 def blueprint(p):
+    b=assemble(p)
+    extremities(b,p)
+    raise_arms(b,p)
+    curve(b,p)
+    return b
+
+def assemble(p):
     if p.species=="BIPED":
         b=biped(p)
     elif p.species in MECH_ARMOUR:
@@ -539,6 +849,8 @@ def blueprint(p):
         b=creature(p)
         if len(b.limbs)>=4 and p.species not in {"SPIDER","CRAB","CENTIPEDE"} and (abs(p.front_legs-1)>1e-6 or abs(p.hind_legs-1)>1e-6):
             stance(b,p)
+    widths(b,p)
+    skull(b,p)
     accessories(b,p)
     return b
 
@@ -579,6 +891,21 @@ def stance(b,p):
         hip,ankle=bones[limb["upper"]]["head"],limb["ankle"]
         limb["reach"]=sum((hip[j]-ankle[j])**2 for j in range(3))**.5
 
+# How a four-legged animal's legs are built. Each joint is (forward offset as a
+# fraction of size, height as a fraction of the shoulder or hip height).
+# r: leg thickness; toe: toe length; pad: how full the foot is.
+LEG_FORMS={
+    # Dogs and cats walk on their toes: a low wrist, a long hind foot from a low hock, a soft paw.
+    "paw":dict(elbow=(.060,.58),wrist=(-.008,.21),stifle=(-.090,.62),hock=(.090,.27),r=.040,toe=.070,pad=1.25),
+    # Horses and their like: a high knee and hock over a long cannon bone, a small hard hoof.
+    "hoof":dict(elbow=(.050,.62),wrist=(-.004,.34),stifle=(-.075,.68),hock=(.070,.39),r=.043,toe=.042,pad=1.05),
+    # Giants stand on columns: joints stacked almost straight, the ankle near the ground.
+    "pillar":dict(elbow=(.022,.56),wrist=(.0,.14),stifle=(-.032,.56),hock=(.018,.14),r=.068,toe=.050,pad=1.1),
+}
+LEG_KIND={"DOG":("paw",.92),"CAT":("paw",.84),"PANTHER":("paw",1.05),"DRAGON":("paw",1.15),
+          "HORSE":("hoof",1.0),"GNOU":("hoof",1.15),"GIRAFFE":("hoof",.92),"CENTAUR":("hoof",1.0),
+          "BRONTO":("pillar",1.0)}
+
 def creature(p):
     species, h = p.species, p.size
     b = Blueprint(species, h)
@@ -608,16 +935,17 @@ def creature(p):
         b.form("pelvis", (0,rear+h*.035,z), (width*1.22*p.hip_size, h*.115, h*.122*p.hip_size), 0)
     else:
         b.bone("pelvis", (0,0,z), (0,0,z+h*.08), "CTRL-body")
-        b.form("pelvis", (0,0,z), (width*1.16*p.hip_size, h*.10*p.hip_size, h*.09), 1)
+        b.form("pelvis", (0,0,z), (width*.92*p.hip_size, h*.092*p.hip_size, h*.09), 1)
     spine = []
+    torso = torso_height = h*.25*p.body_length   # height of an upright trunk
     for i in range(p.spine_links):
         u0, u1 = i/p.spine_links, (i+1)/p.spine_links
         if upright:
-            head, tail = (0,0,z+h*.25*u0), (0,0,z+h*.25*u1)
+            head, tail = (0,0,z+torso*u0), (0,0,z+torso*u1)
             g = girth(p,(u0+u1)/2)
-            shape = (width*(1.0+u1*.42)*g, h*.073*g, h*.15/p.spine_links+h*.025)
+            shape = (width*(.80+u1*.26)*g, h*.080*g, torso*.6/p.spine_links+h*.025)
         else:
-            head = (0, length*.42-length*.84*u0, z)
+            head = (0, length*.42-length*.84*u0, z+h*.025*sin(pi*u0))
             tail = (0, length*.42-length*.84*u1, z+h*.025*sin(pi*u1))
             g = girth(p,(u0+u1)/2) if level else 1.0
             shape = (width*(1.0+.18*sin(pi*u1))*g, length*.5/p.spine_links+h*.025, h*.11*g)
@@ -629,20 +957,25 @@ def creature(p):
 
     torso=[]
     if upright:
-        neck_base = (0,0,z+h*.25)
-        neck_top = (0,-h*.025 if dinosaur else 0,z+h*.32)
-        head_center = (0, -h*.07 if dinosaur else -h*.005, z+h*.385)
+        neck_base = (0,0,z+torso_height)
+        neck_top = (0,-h*.025 if dinosaur else 0,z+torso_height+h*.07)
+        head_center = (0, -h*.07 if dinosaur else -h*.005, z+torso_height+h*.135)
         head_shape = (h*.072, h*(.13 if dinosaur else .065), h*.09)
     else:
         neck_base=(0,-length*.42,z)
         if species == "CENTAUR":
-            # An upright torso rises from the front of the four-legged body.
-            y0=-length*.42
+            # An upright torso rises from the front of the four-legged body: from the
+            # horse's breast, a little ahead of the forelegs, so they hang under the body
+            # and not from the corner where the trunk turns up.
+            y0=-length*.42-h*.06
+            last=next(spec for spec in b.bones if spec["name"]==spine[-1])
+            last["tail"]=(last["tail"][0],y0,last["tail"][2])
             for i in range(3):
                 a,c=(0,y0,z+h*.02+h*.10*i),(0,y0,z+h*.02+h*.10*(i+1))
                 name=f"torso.{i+1:02d}"
                 b.bone(name,a,c,torso[-1] if torso else spine[-1])
-                b.form(name,(0,y0,(a[2]+c[2])/2),(width*(1.0+.22*i),h*.075,h*.065))
+                # Deeper towards the chest, with the ribcage carried forward over the horse's breast.
+                b.form(name,(0,y0-h*.008*i,(a[2]+c[2])/2),(width*(1.0+.22*i),h*(.075+.014*i),h*.065))
                 torso.append(name)
             neck_base=(0,y0,z+h*.32)
             neck_top=(0,y0,z+h*.39)
@@ -656,6 +989,14 @@ def creature(p):
             neck_top=(0,-length*.54,z+h*.015)
             head_center=(0,-length*.68,z+h*.015)
             head_shape=(h*.065,h*.14,h*.047)
+        elif species == "DOG":
+            neck_top=(0,-length*.50-h*.03,z+h*.11)
+            head_center=(0,-length*.50-h*.09,z+h*.15)
+            head_shape=(h*.060,h*.075,h*.062)
+        elif species == "CAT":
+            neck_top=(0,-length*.50-h*.02,z+h*.075)
+            head_center=(0,-length*.50-h*.075,z+h*.11)
+            head_shape=(h*.066,h*.066,h*.060)
         elif species == "GORILLA":
             # A heavy head carried low and forward, with a crest on top.
             neck_top=(0,-length*.50,z+h*.04)
@@ -680,7 +1021,9 @@ def creature(p):
     stretch=tuple((neck_top[j]-neck_base[j])*(p.neck_length-1) for j in range(3))
     neck_top=tuple(neck_top[j]+stretch[j] for j in range(3))
     head_center=tuple(head_center[j]+stretch[j] for j in range(3))
-    neck=neck_chain(b,[neck_base,neck_top],p.neck_links,torso[-1] if torso else spine[-1],h*.084,h*.07)
+    # A centaur's neck is a person's, not a horse's.
+    n0,n1=(h*.05,h*.045) if species=="CENTAUR" else (h*.084,h*.07)
+    neck=neck_chain(b,[neck_base,neck_top],p.neck_links,torso[-1] if torso else spine[-1],n0,n1)
     for spec in b.bones:
         if spec["name"].startswith("neck"): spec["box"]=None   # this family draws round or default boxes
     b.bone("head", neck_top, (head_center[0], head_center[1]-h*.04, head_center[2]+h*.06), neck)
@@ -690,22 +1033,26 @@ def creature(p):
     for sign in (1,-1):
         eye=(sign*head_shape[0]*.77, head_center[1]-head_shape[1]*.62, head_center[2]+head_shape[2]*.25)
         b.form("head", eye, (h*.014,h*.016,h*.014), 2)
-        if species in {"HORSE","PANTHER","DRAGON","GIRAFFE"}:
+        if species in {"HORSE","PANTHER","DRAGON","GIRAFFE","CAT"}:
             ear=(sign*head_shape[0]*.75,head_center[1]+head_shape[1]*.2,head_center[2]+head_shape[2])
             b.form("head", ear, (h*.023,h*.023,h*.055), 1)
 
+    leg_kind,leg_scale=LEG_KIND.get(species,("hoof",1.0))
+    leg_form=LEG_FORMS[leg_kind]
+    # The toe rests on the floor: its joint sits one toe-thickness up.
+    foot_z=max(h*.03,h*leg_form["r"]*leg_scale*.7*leg_form["pad"]*1.02)
     def limb(prefix, hip, knee, ankle, parent, index, sign, foot_scale=1, ground=None, toe=None):
         """ground: where a digitigrade foot meets the floor. The foot bone then
         runs down from the raised ankle and a separate toe lies flat."""
         upper, lower, foot = prefix+".upper", prefix+".lower", prefix+".foot"
-        r = h*(.025 if radial or long or sprawl else .038)
+        r = h*(.025 if radial or long or sprawl else .046 if upright else leg_form["r"]*leg_scale if ground else .038)
         b.bone(upper,hip,knee,parent,radius=r,group="Legs")
         b.bone(lower,knee,ankle,upper,radius=r*.72,group="Legs")
         if ground:
             end=ground
-            b.bone(foot,ankle,ground,lower,radius=r*.55,group="Legs")
-            tip=(ground[0],ground[1]-h*.065*foot_scale,ground[2]-h*.008)
-            b.bone(f"toe.{index+1:02d}.{prefix[-1]}",ground,tip,foot,radius=r*.7,group="Legs")
+            b.bone(foot,ankle,ground,lower,radius=r*.60,group="Legs")
+            tip=(ground[0],ground[1]-h*leg_form["toe"]*foot_scale,ground[2]-h*.008)
+            b.bone(f"toe.{index+1:02d}.{prefix[-1]}",ground,tip,foot,radius=r*.7*leg_form["pad"],group="Legs")
         else:
             end=toe or (ankle[0],ankle[1]-h*.085*foot_scale,ankle[2]-h*.012)
             b.bone(foot,ankle,end,lower,radius=r*.8,group="Legs")
@@ -733,9 +1080,9 @@ def creature(p):
             ground=toe=None
             if upright:
                 y=(i-(pairs-1)/2)*h*.17
-                hip=(sign*width*.65,y,z)
-                knee=(sign*width*.80,y-h*.045, h*.055+leg_height*.49)
-                ankle=(sign*width*.83,y,h*.055)
+                hip=(sign*width*.52,y,z)
+                knee=(sign*width*.60,y-h*.045, h*.055+leg_height*.49)
+                ankle=(sign*width*.64,y,h*.055)
                 parent="pelvis"
             elif radial or long:
                 u=i/max(1,pairs-1)
@@ -780,21 +1127,21 @@ def creature(p):
                     ankle=(x,y,h*.055)
                     toe=(x,y-h*(.05 if front else .09),h*.02)
                 elif front:
-                    knee=(x,y+h*.06,z*.66)
-                    ankle=(x,y-h*.012,z*.30)
-                    ground=(x,y-h*.022,h*.03)
+                    knee=(x,y+h*leg_form["elbow"][0],z*leg_form["elbow"][1])
+                    ankle=(x,y+h*leg_form["wrist"][0],z*leg_form["wrist"][1])
+                    ground=(x,y-h*(.022 if leg_kind!="pillar" else .004),foot_z)
                 else:
-                    knee=(x,y-h*.085,z*.67)
-                    ankle=(x,y+h*.075,z*.34)
-                    ground=(x,y+h*.035,h*.03)
+                    knee=(x,y+h*leg_form["stifle"][0],z*leg_form["stifle"][1])
+                    ankle=(x,y+h*leg_form["hock"][0],z*leg_form["hock"][1])
+                    ground=(x,y+h*(.035 if leg_kind!="pillar" else .006),foot_z)
                 parent=spine[-1] if front else "pelvis"
             limb(f"leg.{i+1:02d}.{side}",hip,knee,ankle,parent,i,sign, .55 if radial or long else 1,ground,toe)
 
     if upright or torso:
         ay=-length*.42 if torso else 0
-        az=z+h*.30 if torso else z+h*.23
+        az=z+h*.30 if torso else z+torso_height-h*.02
         for side,sign in (("L",1),("R",-1)):
-            sh=(sign*width*1.22,ay,az)
+            sh=(sign*width*(1.22 if torso else 1.0),ay,az)
             al=h*p.arm_length*.23
             elbow=(sh[0]+sign*al*.60,ay-h*.012,sh[2]-al*.50)
             wrist=(sh[0]+sign*al,ay-h*.035,sh[2]-al*1.05)
@@ -805,14 +1152,14 @@ def creature(p):
             b.form("hand."+side,hand,(h*.025,h*.024,h*.036),1)
 
     parent="pelvis"
-    tail_length=h*{"LIZARD":.95,"GECKO":.42,"PANTHER":.62,"BRONTO":1.5}.get(species,.55)*p.tail_length
+    tail_length=h*{"LIZARD":.95,"GECKO":.42,"PANTHER":.62,"BRONTO":1.5,"DOG":.36,"CAT":.58}.get(species,.55)*p.tail_length
     for i in range(p.tail_links):
         u0,u1=i/p.tail_links,(i+1)/p.tail_links
         start_y=0 if upright else length*.42+(h*.11 if level else 0)
-        head=(0,start_y+tail_length*u0,z-h*.10*u0)
+        head=(0,start_y+tail_length*u0,z-h*.10*u0+h*.06*sin(pi*u0))
         tail=(0,start_y+tail_length*u1,z-h*.10*u1+h*.06*sin(pi*u1))
         name=f"tail.{i+1:02d}"
-        b.bone(name,head,tail,parent,radius=h*{"GECKO":.085,"BRONTO":.10}.get(species,.06)*(1-u0*.86),group="Tail")
+        b.bone(name,head,tail,parent,radius=h*{"GECKO":.085,"BRONTO":.10,"DOG":.04,"CAT":.034}.get(species,.06)*(1-u0*.86),group="Tail")
         parent=name
 
     # Independently designed silhouettes for the expanded creature library.
@@ -822,6 +1169,15 @@ def creature(p):
             tip=(sign*h*.16,head_center[1]+h*.015,head_center[2]+h*.18)
             b.bone("horn."+side,a,tip,"head",radius=h*.018,group="Details")
         b.form("spine.01",(0,length*.10,z+h*.10),(width*1.3,h*.20,h*.16))
+    elif species == "DOG":
+        # A muzzle out front and ears that hang beside the head.
+        sx,sy,sz=head_shape
+        b.form("head",(0,head_center[1]-sy*1.25,head_center[2]-sz*.28),(sx*.55,sy*.85,sz*.52))
+        for sign in (1,-1):
+            b.form("head",(sign*sx*.98,head_center[1]+sy*.25,head_center[2]+sz*.25),(sx*.22,sy*.40,sz*.80),1)
+    elif species == "CAT":
+        sx,sy,sz=head_shape
+        b.form("head",(0,head_center[1]-sy*.95,head_center[2]-sz*.30),(sx*.45,sy*.35,sz*.38))
     elif species == "ALIEN":
         b.form("head",(0,head_center[1]+h*.025,head_center[2]+h*.05),
                (h*.075,h*.13,h*.11))
@@ -843,6 +1199,6 @@ def creature(p):
         b.form("pelvis",(0,h*.01,z+h*.10),(width*1.15,h*.11,h*.17))
     elif species == "MECH":
         for side,sign in (("L",1),("R",-1)):
-            b.form("arm."+side,(sign*width*1.35,0,z+h*.22),(h*.085,)*3,1)
+            b.form("arm."+side,(sign*width*1.35,0,z+torso_height-h*.03),(h*.085,)*3,1)
         b.form("pelvis",(0,-h*.04,z+h*.07),(width*1.2,h*.09,h*.07),1)
     return b

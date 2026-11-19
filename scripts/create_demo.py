@@ -75,7 +75,7 @@ scene.render.fps=24
 scene.view_settings.view_transform="AgX"
 rig.select(bpy.context,arm)
 arm.show_in_front=False
-p.status="Version 1.3.0 · Dragon · 2 animation layers. Space to play; open Motion tuning or Animation layer manager below."
+p.status="Version 1.7.0 · Dragon · 2 animation layers. Space to play; open Motion tuning or Animation layer manager below."
 for screen in bpy.data.screens:
     for area in screen.areas:
         if area.type=="VIEW_3D":
